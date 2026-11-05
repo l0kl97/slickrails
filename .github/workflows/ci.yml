@@ -1,0 +1,36 @@
+# CI for the slickrails kit itself: shellcheck + the full test suite. The kit dogfoods its own hooks locally.
+# Minutes: in a private repo macOS counts 10x and Windows 2x against the free plan. A draft PR runs on Linux only;
+# marking it ready for review (and every push to main) runs Linux, macOS and Windows (Git Bash, blocking since
+# 2026-10-22). Merge only with all three green: a draft cannot be merged anyway.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    strategy:
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'push' || github.event.pull_request.draft == false) && '["ubuntu-latest","macos-15","windows-latest"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}   # Git Bash runs the suite about 6x slower than Linux
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        # the same list the local pre-push check runs (CHECK_TYPECHECK in .slickrails/config.sh)
+        run: sh scripts/lint.sh
+
+      - name: Test suite
+        run: sh tests/run.sh

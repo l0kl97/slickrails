@@ -1,0 +1,23 @@
+L1 deterministic: caught 11/12 faults, false positives 0/10 controls, known-miss 1, skipped 0, errors 0 (gitleaks=0)
+agent-git-status             control  OK clean
+agent-no-verify              fault    OK caught
+inst-fresh-repo              control  OK clean
+inst-husky-clobber           fault    OK caught
+pc-aws-key                   fault    OK caught
+pc-clean-source              control  OK clean
+pc-env-example               control  OK clean
+pc-generic-api-key           fault    KNOWN-MISS missed (exit 0, wanted nonzero)
+pc-new-env                   fault    OK caught
+pc-rename-env                fault    OK caught
+pc-rename-harmless           control  OK clean
+pp-green-clean               control  OK clean
+pp-red-head-green-worktree   fault    OK caught
+pp-red-head-red-worktree     fault    OK caught
+rv-pass-but-fail             fault    OK caught
+rv-pass-clean                control  OK clean
+st-clean-tree-green          control  OK clean
+st-deadline-green            control  OK clean
+st-green-dirty               control  OK clean
+st-red-committed-clean-tree  fault    OK caught
+st-red-dirty                 fault    OK caught
+st-timeout-red               fault    OK caught

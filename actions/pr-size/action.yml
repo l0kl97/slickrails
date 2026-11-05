@@ -1,0 +1,35 @@
+# slickrails PR size guard as a reusable composite action (rule 12).
+# Usage in a workflow (after actions/checkout with fetch-depth: 0):
+#   - uses: l0kl97/slickrails/actions/pr-size@main
+#     with:
+#       max: 800
+name: slickrails PR Size
+description: Fail pull requests that are too large to review properly (excluding lockfiles). Override with the size-ok label.
+inputs:
+  max:
+    description: Maximum changed lines (adds + deletes, lockfiles excluded)
+    required: false
+    default: "800"
+runs:
+  using: composite
+  steps:
+    - name: Count changed lines
+      shell: bash
+      env:
+        MAX: ${{ inputs.max }}
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+        LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+      run: |
+        case ",$LABELS," in
+          *",size-ok,"*) echo "size-ok label present — skipping."; exit 0;;
+        esac
+        CHANGED=$(git diff --numstat "$BASE" "$HEAD" -- . \
+          ':(exclude)package-lock.json' ':(exclude)pnpm-lock.yaml' \
+          ':(exclude)yarn.lock' ':(exclude)*.lock' ':(exclude)dist/**' \
+          | awk '{s+=$1+$2} END {print s+0}')
+        echo "Changed lines (excluding lockfiles): $CHANGED / limit: $MAX"
+        if [ "$CHANGED" -gt "$MAX" ]; then
+          echo "::error::PR too large for a proper review ($CHANGED > $MAX lines). Split it — or add the 'size-ok' label if the size is deliberate."
+          exit 1
+        fi

@@ -1,0 +1,35 @@
+# slickrails: PR size guard (rule 12)
+# AI makes huge PRs cheap — and unreviewable. Above 800 changed lines
+# (excluding lockfiles) the check fails. The "size-ok" label overrides
+# deliberately (e.g. generated code, large migration).
+name: PR Size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  size:
+    if: "!contains(github.event.pull_request.labels.*.name, 'size-ok')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Count changed lines
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          MAX=800
+          CHANGED=$(git diff --numstat "$BASE" "$HEAD" -- . \
+            ':(exclude)package-lock.json' ':(exclude)pnpm-lock.yaml' \
+            ':(exclude)yarn.lock' ':(exclude)*.lock' ':(exclude)dist/**' \
+            | awk '{s+=$1+$2} END {print s+0}')
+          echo "Changed lines (excluding lockfiles): $CHANGED / limit: $MAX"
+          if [ "$CHANGED" -gt "$MAX" ]; then
+            echo "::error::PR too large for a proper review ($CHANGED > $MAX lines). Split it into smaller PRs — or add the 'size-ok' label if the size is deliberate."
+            exit 1
+          fi

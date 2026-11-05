@@ -1,0 +1,5 @@
+from billing import split_invoice
+
+
+def test_split_invoice():
+    assert split_invoice(100, 4) == [25, 25, 25, 25]

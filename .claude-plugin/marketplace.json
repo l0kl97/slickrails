@@ -1,0 +1,11 @@
+{
+  "name": "slickrails",
+  "owner": { "name": "slickrails" },
+  "plugins": [
+    {
+      "name": "slickrails-status",
+      "source": "./mods/slickrails-status",
+      "description": "slickrails in Claude Code's status line: guard, git hooks, local review, last checks, open rules; /slickrails for the whole picture"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+# slickrails
+.env
+.env.*
+!.env.example
+
+# local agent state and worktrees (project settings stay tracked)
+.claude/worktrees/
+.claude/settings.local.json
+.codex/*.local.*
+
+# OS / editor noise
+.DS_Store
+*.swp
+*~
+
+# dependencies and scratch output
+node_modules/
+tmp/
+
+# motion graphics: sources and the final GIFs/posters are tracked, render intermediates are not
+assets/motion/out/*.mp4
+assets/motion/out/*.webm
+assets/motion/out/*.wav
+assets/motion/out/*.mov
+assets/motion/frames/
+assets/motion/.cache/

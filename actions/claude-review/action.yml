@@ -1,0 +1,66 @@
+# slickrails AI review as a reusable composite action (rule 6).
+# Usage (after actions/checkout with fetch-depth: 0):
+#   - uses: l0kl97/slickrails/actions/claude-review@main
+#     with:
+#       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}   # Claude subscription, or:
+#       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+name: slickrails Claude Review
+description: Strict AI review of a pull request along the slickrails risk categories, honoring .slickrails/rules.md.
+inputs:
+  claude_code_oauth_token:
+    description: Claude subscription token from `claude setup-token` (repo secret). Give this or anthropic_api_key.
+    required: false
+    default: ""
+  anthropic_api_key:
+    description: Anthropic API key (repo secret). Give this or claude_code_oauth_token.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: anthropics/claude-code-action@v1
+      with:
+        claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
+        anthropic_api_key: ${{ inputs.anthropic_api_key }}
+        prompt: |
+          Review this PR as a strict senior reviewer of AI-generated
+          code.
+
+          Start with a 3-5 sentence walkthrough grouped by behavior/flow (never by file): what this PR changes,
+          which parts of the system it touches, and the blast radius
+          if it is wrong. Then the findings, tagged [high] / [medium]
+          / [low] risk, highest first.
+
+          Categories:
+          - Performance: excessive or repeated I/O, N+1 queries, wasteful
+            loops/allocations — AI-generated code shows ~8x more excessive
+            I/O than human code, so look for it deliberately
+          - Correctness: logic, edge cases, multi-step flows
+          - Security: missing input validation, injection, secrets,
+            authz, insecure defaults
+          - Reliability: error handling, timeouts/retries, race
+            conditions and DB transactions under load
+          - Tests: do they exercise real failure modes, or only the
+            happy path? Missing failure-mode tests are a finding.
+          - Operations: logging, monitorability, timeout handling for
+            external calls — code does not run in a vacuum
+          - Maintainability: deprecated APIs, breaks with this
+            project's architecture, patterns, and conventions
+          - Suspiciously foreign-looking, verbatim-copied code
+            (license/IP risk) — flag it when it stands out
+
+          If .slickrails/rules.md exists, those project-specific rules
+          take precedence and are checked explicitly.
+          If .slickrails/review-learnings.md exists, honor it: never
+          repeat a finding type its learnings waive; always report
+          what they tighten.
+          If .slickrails/config.sh sets REVIEW_PROFILE, adjust:
+          "quiet" = only [high] findings; "chill" (default) = all real
+          findings; "assertive" = also concrete improvement
+          suggestions, clearly separated from findings.
+
+          Report only real findings, no style nitpicks. Each finding
+          with file:line and a concrete failure scenario. Reply in the
+          language of the PR description. If nothing substantial:
+          confirm briefly and stop.
+        claude_args: "--allowed-tools 'Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)'"

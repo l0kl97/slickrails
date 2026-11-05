@@ -1,0 +1,87 @@
+#!/bin/sh
+# slickrails: pre-push — typecheck + tests before anything leaves the machine.
+# Escape hatch: SLICKRAILS_SKIP=1 git push (the reason belongs in the commit message)
+
+set -u
+
+say() { printf '%s\n' "slickrails[pre-push]: $*" >&2; }
+
+if [ "${SLICKRAILS_SKIP:-0}" = "1" ]; then
+  say "SKIP active — checks bypassed. This should be an exception."
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$REPO_ROOT/.slickrails/config.sh"
+if [ ! -f "$CONFIG" ]; then
+  say "No .slickrails/config.sh found — nothing to check."
+  exit 0
+fi
+. "$CONFIG"
+
+cd "$REPO_ROOT" || exit 1
+
+# The checks below run on the working copy, so "green" only describes the push if the working copy
+# IS what is pushed: HEAD, with nothing uncommitted. git feeds one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+# Untracked files count too (not ignored ones): a new test file nobody added makes local tests green and CI red.
+DIRTY="$(git status --porcelain 2>/dev/null || true)"
+while read -r LREF LSHA _ _; do
+  case "$LSHA" in ""|*[!0]*) ;; *) continue;; esac           # all zeros = branch deletion, nothing to check
+  PUSHED="$(git rev-parse --verify -q "$LSHA^{commit}" 2>/dev/null)" || continue   # not a commit (e.g. blob tag)
+  if [ "$PUSHED" != "$HEAD_SHA" ]; then
+    case "$LREF" in
+      refs/tags/*)   # releases are tagged on older commits; a tag adds no branch content, so note it instead of blocking
+        say "Note — tag ${LREF#refs/tags/} points at $PUSHED, not HEAD: the checks do not cover it."
+        continue;;
+    esac
+    say "Blocked — pushing ${LREF#refs/heads/} ($PUSHED), but the checks run on HEAD ($HEAD_SHA)."
+    say "Check out what you push (git switch <branch>) and push one branch at a time. (Emergency: SLICKRAILS_SKIP=1 git push)"
+    exit 1
+  fi
+  if [ -n "$DIRTY" ]; then
+    say "Blocked — the working tree has uncommitted or untracked files, so the checks would not describe what is pushed:"
+    printf '%s\n' "$DIRTY" | sed -n '1,5p' >&2
+    say "Commit, stash or ignore them, then push again. (Emergency: SLICKRAILS_SKIP=1 git push)"
+    exit 1
+  fi
+done
+
+run_check() {
+  LABEL="$1"; CMD="$2"
+  [ -z "$CMD" ] && return 0
+  say "$LABEL: $CMD"
+  # git exports GIT_DIR (and friends) to hooks. A check that creates its own repositories (a test suite with
+  # temporary git repos) would otherwise write into THIS repository: its config, branches and remotes.
+  # The checks run in the repository root, where git finds the repository on its own.
+  if ! ( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+           GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH; sh -c "$CMD" ); then
+    say "Blocked — $LABEL is red. Push aborted."
+    say "(Emergency: SLICKRAILS_SKIP=1 git push)"
+    exit 1
+  fi
+}
+
+run_check "Typecheck" "${CHECK_TYPECHECK:-}"
+run_check "Tests"     "${CHECK_TEST:-}"
+
+# Optional AI review of the outgoing diff (opt-in via config, needs claude CLI)
+if [ "${CHECK_PREPUSH_REVIEW:-0}" = "1" ] && [ -f .slickrails/ai-review.sh ]; then
+  sh .slickrails/ai-review.sh
+  case $? in
+    0) ;;
+    3) UNREVIEWED=1;;   # review could not run or answered invalidly (REVIEW_ON_ERROR=warn): never report this as a full pass
+    *)
+      say "Blocked — AI review found blocking issues (or could not run with REVIEW_ON_ERROR=block). Push aborted."
+      say "(Emergency: SLICKRAILS_SKIP=1 git push)"
+      exit 1;;
+  esac
+fi
+
+if [ "${UNREVIEWED:-0}" = "1" ]; then
+  say "Checks green — push goes out, but the AI review did NOT run (see the ERROR above)."
+else
+  say "All green — push goes out."
+fi
+exit 0

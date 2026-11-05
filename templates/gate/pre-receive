@@ -1,0 +1,231 @@
+#!/bin/sh
+# slickrails gate: pre-receive hook of the local gate repository (created by `slickrails gate init`).
+#
+# Every ref pushed to the `gate` remote is judged here BEFORE it exists anywhere else:
+#   1. every pushed branch commit is checked out into a disposable worktree (your working copy is never touched)
+#   2. the project's own checks run there, using .slickrails/config.sh of THAT commit:
+#      CHECK_GATE_SETUP (e.g. npm ci), CHECK_TYPECHECK, CHECK_TEST, and the AI review if CHECK_PREPUSH_REVIEW=1
+#   3. only when EVERY ref is green are they forwarded to the real remote, together (git push --atomic when there are
+#      several), so a rejected push leaves nothing behind there
+# Branch deletions and tags are forwarded without checks; other refs are refused.
+# Limits: the pushed commit brings its own config (like CI does) and its checks see your environment variables
+# (tokens included); the real remote is only as reachable as `git push` finds it (bounded by slickrails.nettimeout).
+
+set -u
+
+say() { printf '%s\n' "slickrails[gate]: $*" >&2; }
+
+TARGET="$(git config slickrails.target 2>/dev/null || true)"
+SOURCE="$(git config slickrails.source 2>/dev/null || true)"
+TIMEOUT="$(git config slickrails.timeout 2>/dev/null || echo 900)"
+NETTO="$(git config slickrails.nettimeout 2>/dev/null || echo 60)"
+case "$TIMEOUT" in ""|*[!0-9]*) TIMEOUT=900;; esac
+case "$NETTO" in ""|*[!0-9]*) NETTO=60;; esac
+[ -n "$TARGET" ] || { say "no forwarding target configured — run: slickrails gate init"; exit 1; }
+GIT_TERMINAL_PROMPT=0; export GIT_TERMINAL_PROMPT   # nobody can type a password into a hook
+
+# "pid ppid" of every process: POSIX ps, else the ps of Git Bash (MSYS/Cygwin), which has no -A/-o and prints
+# "PID PPID PGID WINPID ..." with a status letter in front of stopped processes
+pslist() {
+  ps -A -o pid=,ppid= 2>/dev/null && return 0
+  PSL="$(ps -e 2>/dev/null)" || return 1
+  printf '%s\n' "$PSL" | awk 'NR > 1 { if ($1 ~ /^[0-9]+$/) print $1, $2; else print $2, $3 }'
+}
+
+# a hung check is stopped by walking its process tree with ps; without a working ps that would silently stop nothing
+if ! PS_PROBE="$(pslist)" || [ -z "$PS_PROBE" ]; then
+  say "REJECTED: the gate needs 'ps' (ps -A -o pid=,ppid=, or ps -e on Git Bash) to stop hung checks, and it is not usable here (locked-down sandbox?) — push through origin instead, or run where ps works"
+  exit 1
+fi
+
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/slickrails-gate.XXXXXX")" || { say "cannot create a temp dir"; exit 1; }
+ACTIVE_PID=""
+
+# --- process tree handling (same approach as the Stop gate: freeze, TERM, grace, KILL) -----------------------------
+children() { pslist | awk -v p="$1" '$2 == p { print $1 }'; }
+descendants() { for C in $(children "$1"); do echo "$C"; descendants "$C"; done; }
+freeze_tree() { kill -STOP "$1" 2>/dev/null; for C in $(children "$1"); do freeze_tree "$C"; done; }
+alive() {   # a zombie is dead; without `ps -o` (Git Bash) the signal check decides
+  if ST="$(ps -o stat= -p "$1" 2>/dev/null)"; then case "$ST" in ""|Z*) return 1;; *) return 0;; esac; fi
+  kill -0 "$1" 2>/dev/null
+}
+kill_tree() {
+  freeze_tree "$1"
+  KIDS="$(descendants "$1")"
+  for K in "$1" $KIDS; do kill -TERM "$K" 2>/dev/null; done
+  for K in "$1" $KIDS; do kill -CONT "$K" 2>/dev/null; done
+  T=0
+  while [ "$T" -lt 10 ]; do
+    ANY=0; for K in "$1" $KIDS; do alive "$K" && ANY=1; done
+    [ "$ANY" -eq 0 ] && return 0
+    sleep 0.02 2>/dev/null || sleep 1
+    T=$((T + 1))
+  done
+  for K in "$1" $KIDS; do kill -9 "$K" 2>/dev/null; done
+}
+
+drop_worktree() {
+  env -u GIT_QUARANTINE_PATH git worktree remove --force "$TMPD/work" >/dev/null 2>&1 || true
+  env -u GIT_QUARANTINE_PATH git worktree prune >/dev/null 2>&1 || true
+}
+# shellcheck disable=SC2317,SC2329  # invoked through `trap cleanup EXIT`, which shellcheck cannot follow
+cleanup() {
+  [ -n "$ACTIVE_PID" ] && kill_tree "$ACTIVE_PID"
+  drop_worktree
+  rm -rf "$TMPD"
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+# bounded <seconds> <outfile or ""> <command...>: run a command under a deadline. It gets no stdin and none of the
+# inherited descriptors (an orphan holding the connection to the pusher would keep `git push` waiting). BRC = its exit
+# status, 124 on timeout; the whole process tree is stopped.
+bounded() {
+  B_SECS="$1"; B_OUT="$2"; shift 2
+  if [ -n "$B_OUT" ]; then
+    ( exec "$@" 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- >"$B_OUT" 2>&1 </dev/null ) &
+  else
+    ( exec "$@" 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- </dev/null ) &
+  fi
+  ACTIVE_PID=$!
+  B_T0="$(date +%s)"; B_TIMED=0
+  while kill -0 "$ACTIVE_PID" 2>/dev/null; do
+    if [ $(( $(date +%s) - B_T0 )) -ge "$B_SECS" ]; then
+      B_TIMED=1; kill_tree "$ACTIVE_PID"
+      # a stop signal can still get lost (Git Bash): try again for a bounded time instead of waiting for the command
+      B_R=0
+      while kill -0 "$ACTIVE_PID" 2>/dev/null && [ "$B_R" -lt 10 ]; do
+        sleep 0.2 2>/dev/null || sleep 1
+        kill_tree "$ACTIVE_PID"; B_R=$((B_R + 1))
+      done
+      break
+    fi
+    sleep 0.2 2>/dev/null || sleep 1
+  done
+  if kill -0 "$ACTIVE_PID" 2>/dev/null; then BRC=124   # it would not die: do not wait for it
+  else wait "$ACTIVE_PID" 2>/dev/null; BRC=$?; fi
+  ACTIVE_PID=""
+  [ "$B_TIMED" -eq 1 ] && BRC=124
+  return 0
+}
+
+# what the checks do inside the worktree (a separate script so the pushed config is sourced in a clean shell)
+cat > "$TMPD/run-checks.sh" <<'CHECKS'
+cd "$1" || exit 1
+if [ -L .slickrails/config.sh ]; then
+  echo "== .slickrails/config.sh is a symlink in the pushed commit — refusing to run a file from outside the commit"
+  exit 15
+fi
+if [ ! -f .slickrails/config.sh ]; then
+  echo "== no .slickrails/config.sh in the pushed commit — nothing to check"
+  exit 0
+fi
+. ./.slickrails/config.sh
+for D in ${GATE_LINK_DIRS:-}; do
+  case "$D" in
+    /*|..|../*|*/..|*/../*) echo "== GATE_LINK_DIRS: ignoring '$D' (must stay inside the worktree)"; continue;;
+  esac
+  if [ -d "$GATE_SOURCE/$D" ] && [ ! -e "$D" ]; then mkdir -p "$(dirname "$D")"; ln -s "$GATE_SOURCE/$D" "$D"; fi
+done
+step() { # <name> <command> <exit code on failure>
+  [ -n "$2" ] || return 0
+  echo "== $1: $2"
+  sh -c "$2" || { echo "== $1 FAILED"; exit "$3"; }
+}
+step setup "${CHECK_GATE_SETUP:-}" 11
+step typecheck "${CHECK_TYPECHECK:-}" 12
+step tests "${CHECK_TEST:-}" 13
+if [ "${CHECK_PREPUSH_REVIEW:-0}" = "1" ] && [ -f .slickrails/ai-review.sh ]; then
+  echo "== AI review"
+  sh .slickrails/ai-review.sh
+  case $? in
+    0) ;;
+    3) echo "== AI review ERROR: the push is NOT reviewed (REVIEW_ON_ERROR=warn lets it through)";;
+    *) echo "== AI review FAILED"; exit 14;;
+  esac
+fi
+exit 0
+CHECKS
+
+validate() { # <sha> <ref> <old sha>
+  WT="$TMPD/work"
+  drop_worktree
+  rm -rf "$WT"
+  # GIT_QUARANTINE_PATH makes git refuse every ref update, including the detached HEAD of a new worktree. The
+  # pushed objects stay reachable through GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES, so only the marker goes.
+  if ! env -u GIT_QUARANTINE_PATH git worktree add --detach --force "$WT" "$1" >"$TMPD/wt.log" 2>&1 </dev/null; then
+    sed -n '1,5p' "$TMPD/wt.log" >&2
+    say "cannot check out $1 into a temporary worktree"
+    return 1
+  fi
+  # base of the AI review: the tip of the same branch on the real remote, else its HEAD, else its main/master (a
+  # remote's HEAD can point at a branch that does not exist), else what the gate had before
+  BASE=""
+  for B in "$2" HEAD refs/heads/main refs/heads/master; do
+    bounded "$NETTO" "$TMPD/lsr" env -u GIT_QUARANTINE_PATH git ls-remote "$TARGET" "$B"
+    [ "$BRC" -eq 0 ] && BASE="$(cut -f1 "$TMPD/lsr" | head -1)"
+    [ -n "$BASE" ] && break
+  done
+  if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+    case "$3" in ""|*[!0]*) BASE="$3";; *) BASE="";; esac
+  fi
+  say "checking $2 ($(printf '%s' "$1" | cut -c1-10)) in a disposable worktree"
+
+  bounded "$TIMEOUT" "$TMPD/out" env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX -u GIT_QUARANTINE_PATH \
+    GATE_SOURCE="$SOURCE" SLICKRAILS_REVIEW_BASE="$BASE" sh "$TMPD/run-checks.sh" "$WT"
+  RC="$BRC"
+  drop_worktree
+  if [ "$RC" -eq 124 ]; then
+    tail -40 "$TMPD/out" >&2
+    say "REJECTED $2: the checks timed out after ${TIMEOUT}s (git -C <gate> config slickrails.timeout <seconds>)"
+    return 1
+  fi
+  if [ "$RC" -ne 0 ]; then
+    tail -40 "$TMPD/out" >&2
+    say "REJECTED $2: the checks failed (exit $RC) — fix it and push again; the real remote has not seen this push"
+    return 1
+  fi
+  # the step lines, plus whatever the AI review said (a skipped review must not look like a reviewed one)
+  grep -E '^==|slickrails\[ai-review\]' "$TMPD/out" >&2 || true
+  say "checks are green for $2"
+  return 0
+}
+
+# --- phase 1: look at every pushed ref; nothing is forwarded yet ---------------------------------------------------
+cat > "$TMPD/refs"
+SPECS=""; NSPECS=0
+while read -r OLD NEW REF; do
+  case "$REF" in
+    refs/heads/*|refs/tags/*) ;;
+    *) say "REJECTED $REF: the gate takes branches and tags only"; exit 1;;
+  esac
+  case "$NEW" in
+    *[!0]*) ;;
+    *) say "deleting $REF on the real remote (forwarded without checks)"
+       SPECS="$SPECS :$REF"; NSPECS=$((NSPECS + 1)); continue;;
+  esac
+  case "$REF" in
+    refs/tags/*)
+      say "tag ${REF#refs/tags/}: forwarded without checks (a tag adds no new branch content)"
+      SPECS="$SPECS $NEW:$REF"; NSPECS=$((NSPECS + 1)); continue;;
+  esac
+  validate "$NEW" "$REF" "$OLD" || exit 1
+  SPECS="$SPECS $NEW:$REF"; NSPECS=$((NSPECS + 1))
+done < "$TMPD/refs"
+
+[ "$NSPECS" -gt 0 ] || exit 0
+
+# --- phase 2: forward everything together --------------------------------------------------------------------------
+ATOMIC=""; [ "$NSPECS" -gt 1 ] && ATOMIC="--atomic"
+say "forwarding $NSPECS ref(s) to the real remote"
+# shellcheck disable=SC2086
+bounded "$NETTO" "" env -u GIT_QUARANTINE_PATH git push --quiet $ATOMIC "$TARGET" $SPECS
+if [ "$BRC" -ne 0 ]; then
+  if [ "$BRC" -eq 124 ]; then
+    say "FORWARD FAILED: the real remote did not answer within ${NETTO}s (git -C <gate> config slickrails.nettimeout <seconds>)"
+  else
+    say "FORWARD FAILED: the real remote did not take the push (refused, unreachable or timed out — see above); nothing was changed there"
+  fi
+  exit 1
+fi
+exit 0

@@ -1,0 +1,77 @@
+# slickrails: AI review on every PR (rule 6)
+# Needs the Claude GitHub App on the repo (https://github.com/apps/claude) and ONE repo secret (Settings → Secrets →
+# Actions): CLAUDE_CODE_OAUTH_TOKEN (your Claude subscription, from `claude setup-token`) or ANTHROPIC_API_KEY (API
+# billing); the unset one stays empty. `/install-github-app` in Claude Code sets up both. Without them this job fails.
+# Reviews along the risk categories; project-specific focus areas come
+# from .slickrails/rules.md when present.
+name: Claude Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this PR as a strict senior reviewer of AI-generated
+            code.
+
+            Start with a 3-5 sentence walkthrough grouped by behavior/flow (never by file): what this PR changes,
+            which parts of the system it touches, and the blast radius
+            if it is wrong. Then the findings, tagged [high] / [medium]
+            / [low] risk, highest first.
+
+            Categories:
+            - Performance: excessive or repeated I/O, N+1 queries, wasteful
+              loops/allocations — AI-generated code shows ~8x more excessive
+              I/O than human code, so look for it deliberately
+            - Correctness: logic, edge cases, multi-step flows
+            - Security: missing input validation, injection, secrets,
+              authz, insecure defaults
+            - Reliability: error handling, timeouts/retries, race
+              conditions and DB transactions under load
+            - Tests: do they exercise real failure modes, or only the
+              happy path? Missing failure-mode tests are a finding.
+            - Operations: logging, monitorability, timeout handling for
+              external calls — code does not run in a vacuum
+            - Maintainability: deprecated APIs, breaks with this
+              project's architecture, patterns, and conventions
+            - Suspiciously foreign-looking, verbatim-copied code
+              (license/IP risk) — flag it when it stands out
+
+            If .slickrails/rules.md exists, those project-specific rules
+            take precedence and are checked explicitly.
+            If .slickrails/review-learnings.md exists, honor it: never
+            repeat a finding type its learnings waive; always report
+            what they tighten.
+            If .slickrails/config.sh sets REVIEW_PROFILE, adjust:
+            "quiet" = only [high] findings; "chill" (default) = all real
+            findings; "assertive" = also concrete improvement
+            suggestions, clearly separated from findings.
+
+            Report only real findings, no style nitpicks. Each finding
+            with file:line and a concrete failure scenario. Reply in the
+            language of the PR description. If nothing substantial:
+            confirm briefly and stop.
+          claude_args: "--allowed-tools 'Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)'"

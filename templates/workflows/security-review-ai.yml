@@ -1,0 +1,64 @@
+# slickrails: deep AI security review per PR — OPT-IN (rule 6, security tier)
+#
+# Wraps Anthropic's official security-review action: semantic analysis of the
+# PR diff (injection, authz, crypto, deserialization, race conditions) with
+# severity ratings, line-level PR comments, and built-in false-positive
+# filtering. Needs an ANTHROPIC_API_KEY secret: the action has no subscription-token input (claude-review.yml does).
+#
+# Why opt-in and not part of the default install:
+#   1. It spends extra tokens on every PR, on top of the standard AI review.
+#   2. Anthropic states the action is NOT hardened against prompt injection —
+#      use it on TRUSTED PRs only. On public repos, enable
+#      "Require approval for all external contributors" in the Actions
+#      settings so workflows never run on unreviewed third-party code.
+#
+# How this template uses the action (checked against its action.yml):
+#   - Pinned to a commit SHA, not @main: the repository publishes no tags or
+#     releases, and a moving branch would run whatever lands there next with
+#     your API key. To update: pick a newer commit from
+#     https://github.com/anthropics/claude-code-security-review/commits/main,
+#     read what changed, replace the SHA (the date below is when it was pinned).
+#   - run-every-commit: true. By default the action scans only the FIRST commit
+#     of a PR (it stores a marker and disables itself on later pushes), so
+#     everything pushed afterwards would go unreviewed. The cost is one scan
+#     per push; the concurrency group below cancels superseded runs.
+#   - Fork PRs are skipped. They get no secrets (the run would just fail red)
+#     and the action has no fork check of its own.
+#
+# Optional inputs (see the action's README): exclude-directories,
+# claudecode-timeout (minutes, default 20), claude-model,
+# custom-security-scan-instructions, false-positive-filtering-instructions
+# (paths to text files).
+#
+# To enable: copy this file from the kit into your repo as
+# .github/workflows/security-review-ai.yml
+name: AI Security Review
+
+permissions:
+  pull-requests: write
+  contents: read
+
+on:
+  pull_request:
+
+concurrency:
+  group: security-review-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-review:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      # pinned 2026-10-21 (main as of that day; last upstream commit 2026-02-11)
+      - uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+        with:
+          comment-pr: true
+          run-every-commit: true
+          claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

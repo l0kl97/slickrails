@@ -1,0 +1,27 @@
+{
+  "name": "slickrails",
+  "version": "1.3.0",
+  "description": "Guardrails for AI-built codebases — hooks, CI, AI review, and feature dossiers in one command.",
+  "bin": {
+    "slickrails": "./cli.js"
+  },
+  "files": [
+    "cli.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l0kl97/slickrails.git"
+  },
+  "keywords": [
+    "guardrails",
+    "git-hooks",
+    "ai",
+    "claude",
+    "code-review",
+    "ci"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

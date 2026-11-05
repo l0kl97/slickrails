@@ -1,0 +1,78 @@
+#!/bin/sh
+# slickrails CLI — thin wrapper around the kit.
+#   slickrails init [dir] [--lang de] [--agent claude|codex|both]   pull the standard into a repo
+#   slickrails doctor                   check the environment
+#   slickrails version                  print the kit version
+#   slickrails upgrade                  update the kit itself (git pull)
+#   slickrails status [--github]        one screen: health, checks, reviewer, open rules, dossiers (+ CI with --github)
+#   slickrails github-review            add the AI review server-side on GitHub (the local one before push is the default)
+#   slickrails protect                  branch protection for this repo's main on GitHub (needs gh)
+#   slickrails gate init|status|remove  local gate remote: `git push gate <branch>` checks the pushed commit first
+#   slickrails dossier [range] [slug]   draft a feature dossier from a diff (needs claude CLI)
+#   slickrails uninstall                remove the CLI symlink (kit stays on disk)
+
+set -eu
+
+# Resolve the kit directory through symlinks (bin/slickrails lives in <kit>/bin).
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK";;
+    *)  SELF="$(dirname "$SELF")/$LINK";;
+  esac
+done
+KIT_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+CMD="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$CMD" in
+  init)
+    exec sh "$KIT_DIR/install.sh" "$@";;
+  doctor)
+    exec sh "$KIT_DIR/install.sh" doctor;;
+  version)
+    exec sh "$KIT_DIR/install.sh" version;;
+  upgrade)
+    if [ -d "$KIT_DIR/.git" ]; then
+      echo "slickrails: updating kit at $KIT_DIR"
+      git -C "$KIT_DIR" pull --ff-only
+      sh "$KIT_DIR/install.sh" version
+    else
+      echo "slickrails: $KIT_DIR is not a git checkout — re-run the bootstrap installer to upgrade." >&2
+      exit 1
+    fi;;
+  protect)
+    exec sh "$KIT_DIR/scripts/setup-branch-protection.sh" "$@";;
+  status)
+    exec sh "$KIT_DIR/scripts/status.sh" "$@";;
+  github-review)
+    # the local review before push is the default; this adds the same review server-side on every PR
+    ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "slickrails: not inside a git repo" >&2; exit 1; }
+    DEST="$ROOT/.github/workflows/claude-review.yml"
+    if [ -f "$DEST" ]; then echo "slickrails: $DEST is already there."
+    else mkdir -p "$ROOT/.github/workflows"; cp "$KIT_DIR/templates/workflows/claude-review.yml" "$DEST"; echo "slickrails: + .github/workflows/claude-review.yml"; fi
+    echo "slickrails: to make it run on GitHub:"
+    echo "  1. install the Claude GitHub App on the repo: https://github.com/apps/claude"
+    echo "  2. set ONE repo secret: CLAUDE_CODE_OAUTH_TOKEN (your Claude subscription: claude setup-token) or ANTHROPIC_API_KEY"
+    echo "     ('/install-github-app' in Claude Code does both). Each PR push then uses GitHub Actions minutes."
+    echo "  3. commit the workflow.";;
+  gate)
+    exec sh "$KIT_DIR/templates/gate.sh" "$@";;
+  dossier)
+    exec sh "$KIT_DIR/templates/draft-dossier.sh" "$@";;
+  uninstall)
+    TARGET="$(command -v slickrails 2>/dev/null || true)"
+    if [ -n "$TARGET" ] && [ -L "$TARGET" ]; then
+      rm "$TARGET"
+      echo "slickrails: removed $TARGET. The kit itself stays at $KIT_DIR — delete it with: rm -rf \"$KIT_DIR\""
+    else
+      echo "slickrails: no symlink found on PATH — nothing to remove. Kit lives at $KIT_DIR."
+    fi;;
+  help|--help|-h)
+    sed -n '2,13p' "$SELF" | sed 's/^# \{0,1\}//';;
+  *)
+    echo "slickrails: unknown command '$CMD' — try: slickrails help" >&2
+    exit 1;;
+esac

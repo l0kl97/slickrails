@@ -1,0 +1,7 @@
+L2 claude review (cli: 2.1.304 (Claude Code), model: claude-sonnet-5-5, 3 reps): caught 12/12 fault runs (FAIL verdict with a finding naming the seeded defect; 12 FAIL verdicts in total), false positives 0/6 control runs, invalid reviews 0 (counted neither as caught nor as clean)
+clean-http-call          control  FAIL-verdict 0/3, matching finding 0/3, valid PASS 3/3, INVALID 0/3
+clean-pure-function      control  FAIL-verdict 0/3, matching finding 0/3, valid PASS 3/3, INVALID 0/3
+happy-path-test          fault    FAIL-verdict 3/3, matching finding 3/3, valid PASS 0/3, INVALID 0/3
+n-plus-one               fault    FAIL-verdict 3/3, matching finding 3/3, valid PASS 0/3, INVALID 0/3
+no-timeout               fault    FAIL-verdict 3/3, matching finding 3/3, valid PASS 0/3, INVALID 0/3
+sql-injection            fault    FAIL-verdict 3/3, matching finding 3/3, valid PASS 0/3, INVALID 0/3

@@ -1,0 +1,41 @@
+# slickrails: security scan (rules 4 + 7)
+# Secrets scan over the history + dependency audit per stack.
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read   # gitleaks-action lists the PR's commits; without it every PR fails with 403
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: npm audit (if Node project)
+        if: hashFiles('package-lock.json') != ''
+        run: npm audit --audit-level=high
+
+      - name: pip-audit (if Python project)
+        if: hashFiles('requirements.txt') != '' || hashFiles('pyproject.toml') != ''
+        run: |
+          python -m pip install pip-audit
+          if [ -f requirements.txt ]; then pip-audit -r requirements.txt; else pip-audit .; fi

@@ -1,0 +1,14 @@
+{
+  "name": "slickrails-motion",
+  "private": true,
+  "type": "module",
+  "description": "README animations for slickrails: deterministic HTML scenes rendered to GIF/MP4 with Playwright + ffmpeg.",
+  "scripts": {
+    "build": "node build.mjs",
+    "render": "node build.mjs && node render.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}

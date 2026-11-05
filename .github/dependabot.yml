@@ -1,0 +1,9 @@
+# Dependabot for the slickrails kit repo itself: only GitHub Actions live
+# here — the npm/pip entries belong to target projects (see the template
+# under templates/dependabot.yml that install.sh ships).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

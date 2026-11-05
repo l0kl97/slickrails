@@ -1,0 +1,30 @@
+# slickrails: CI for Swift projects (SwiftPM)
+# For Xcode app projects (e.g. iOS/macOS apps without Package.swift),
+# replace the test step with xcodebuild and the matching scheme.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & Test (SwiftPM)
+        run: |
+          if [ -f Package.swift ]; then
+            swift build
+            swift test
+          else
+            echo "No Package.swift — put your xcodebuild scheme here (see comment above)."
+            exit 1
+          fi

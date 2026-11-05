@@ -1,0 +1,7 @@
+def order_totals(db, customer_ids):
+    totals = {}
+    for cid in customer_ids:
+        # one query per customer
+        rows = db.execute("SELECT amount FROM orders WHERE customer_id = ?", (cid,)).fetchall()
+        totals[cid] = sum(r[0] for r in rows)
+    return totals

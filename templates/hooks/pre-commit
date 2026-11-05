@@ -1,0 +1,53 @@
+#!/bin/sh
+# slickrails: pre-commit — secrets scan + .env block + optional staged lint
+# Escape hatch: git commit --no-verify (the reason belongs in the commit message)
+
+set -u
+
+say() { printf '%s\n' "slickrails[pre-commit]: $*" >&2; }
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$REPO_ROOT/.slickrails/config.sh"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+# --- 1. Block .env files (example/template files are fine) ---
+# Destination paths of adds, copies, modifications, renames and type changes (a rename onto .env counts).
+STAGED="$(git diff --cached --name-only -z --diff-filter=ACMRT | tr '\0' '\n')"
+ENV_HITS="$(printf '%s\n' "$STAGED" | grep -Ei '(^|/)\.env(\..+)?$' | grep -viE '\.(example|sample|template)$' || true)"   # -i: .ENV is the same file on macOS/Windows
+if [ -n "$ENV_HITS" ]; then
+  say "Blocked — .env file in the commit:"
+  printf '%s\n' "$ENV_HITS" >&2
+  say "Use .env.example for templates. (Emergency: --no-verify + reason in the commit message)"
+  exit 1
+fi
+
+# --- 2. Secrets scan ---
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --no-banner --redact >/dev/null 2>&1; then
+    say "Blocked — gitleaks found potential secrets in the staged changes."
+    say "Details: gitleaks protect --staged --no-banner --verbose"
+    exit 1
+  fi
+fi
+# Simple patterns over the staged diff (added lines only), with or without gitleaks: gitleaks judges by entropy
+# and lets a key with little randomness through
+PATTERN='(sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[0-9A-Za-z_-]{30,})'
+HITS="$(git diff --cached --unified=0 | grep -E '^\+' | grep -Ec "$PATTERN" || true)"
+if [ "${HITS:-0}" -gt 0 ]; then
+  say "Blocked — ${HITS} line(s) look like secrets (API keys / private keys)."
+  say "Inspect with: git diff --cached | grep -nE '$PATTERN'"
+  command -v gitleaks >/dev/null 2>&1 || say "Tip: 'brew install gitleaks' for the real scanner."
+  exit 1
+fi
+
+# --- 3. Optional fast lint over staged files ---
+if [ -n "${CHECK_LINT_STAGED:-}" ]; then
+  say "Lint (staged): $CHECK_LINT_STAGED"
+  # keep GIT_INDEX_FILE (a staged-lint tool may read the index) but not GIT_DIR: see pre-push
+  if ! ( unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_PREFIX; sh -c "$CHECK_LINT_STAGED" ); then
+    say "Blocked — lint is red."
+    exit 1
+  fi
+fi
+
+exit 0

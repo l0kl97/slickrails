@@ -1,0 +1,5 @@
+{
+  "name": "slickrails-status",
+  "version": "0.1.0",
+  "description": "slickrails in Claude Code's status line: guard, git hooks, local review, last checks, open rules; /slickrails for the whole picture"
+}
