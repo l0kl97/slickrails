@@ -17,7 +17,7 @@ jobs:
       contents: read
       pull-requests: read   # gitleaks-action lists the PR's commits; without it every PR fails with 403
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v3
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: npm audit (if Node project)
         if: hashFiles('package-lock.json') != ''
