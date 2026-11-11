@@ -47,10 +47,13 @@ double bottom.
 ### 5. main is protected
 Nobody pushes directly to `main`/`master`. Changes go through branches +
 PRs, and a PR merges only with green CI. Branch protection is set up via
-`slickrails protect` (gh CLI), which reads the settings
-back from GitHub and reports what actually holds: required status
-checks alone do not force a PR, and admins are only bound by the rules
-unless `ENFORCE_ADMINS=0` is set.
+`slickrails protect` (gh CLI): every change goes through a PR with green
+required checks (no approval needed, so it works solo; `REQUIRE_PR=0`
+opts out), admins are bound too (`ENFORCE_ADMINS=0` opts out), and
+`CODEOWNER_REVIEWS=1` adds a human review: every PR then needs one
+approval, from the named owner where it touches sensitive paths (see
+`.github/CODEOWNERS`), and a new push dismisses it. The script reads the settings back from GitHub
+and reports what actually holds.
 
 ### 6. Every PR gets an AI review
 Before merge, a review runs — by default locally before every push, with

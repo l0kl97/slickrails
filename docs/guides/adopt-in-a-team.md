@@ -13,13 +13,20 @@ matters more than the tooling.
 3. Leave branch protection OFF for the first week. Let the local hooks
    speak for themselves — the first time pre-commit catches a real
    secret, the argument is over.
+   **Exception:** if people without an engineering background merge
+   code through agents, the first week is the riskiest one. Run
+   `slickrails protect` on day one (step 4) and keep the rest of this
+   order.
 
 ## Week 2 — enforce the cheap layers
 
-4. `slickrails protect` — required checks on main, admins
-   bound by them (`ENFORCE_ADMINS=0` opts out). The script reads the
-   settings back from GitHub and says what holds; pull requests stay
-   optional (required checks alone do not force them).
+4. `slickrails protect` — every change to main through a PR with
+   green required checks, admins bound by them (`REQUIRE_PR=0` and
+   `ENFORCE_ADMINS=0` opt out). The script reads the settings back from
+   GitHub and says what holds. For a named human reviewer on sensitive
+   paths (auth, payments, migrations, infra): `.github/CODEOWNERS` plus
+   `CODEOWNER_REVIEWS=1`. GitHub then asks for one approval on every
+   PR, so it needs a second person on the team.
 5. The AI review runs locally before every push with each developer's own `claude` or `codex` (no key, no minutes). To enforce it server-side too: `slickrails github-review`, then install the [Claude GitHub App](https://github.com/apps/claude) and set the `CLAUDE_CODE_OAUTH_TOKEN` (subscription, `claude setup-token`) or `ANTHROPIC_API_KEY` secret (`/install-github-app` in Claude Code does both). A shared team secret should be an API key: an OAuth token is tied to the subscription of the person who created it.
    Optional: `slickrails init --status-mod` offers everyone the slickrails status line in Claude Code.
 6. Create the `size-ok` label and tell everyone about rule 12's limit
