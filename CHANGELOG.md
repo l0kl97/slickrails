@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- Rulebook chapters "After the merge: the deploy layer" (feature flags, preview environments, staged rollout,
+  rollback, error monitoring) and "Access: agents never hold production keys", English and German — recommendations,
+  nothing is installed
+
 ### Changed
 - `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS
   tape, header renderer) left this repo; the rendered GIFs stay for the README

@@ -173,6 +173,43 @@ judgment side: `/code-review` locally, `claude-review.yml` on the PR.
 Per repo, `CHECK_SESSION` in `config.sh` overrides what the Stop hook
 runs.
 
+## After the merge: the deploy layer (recommendation)
+
+The rules above decide what gets into `main`. They say nothing about how
+fast a bad change gets out again, and with many people shipping through
+agents that matters as much as review. slickrails does not install any
+of this; it is the checklist we hold a project to before more than a
+handful of people merge into it:
+
+- **Feature flags for anything user-facing.** A merge behind a flag can
+  be switched off in seconds without a revert or a deploy. For builder
+  teams this does more than another review round: every merge stays
+  reversible.
+- **A preview environment per PR**, so the person who asked for the
+  change clicks through it before it merges, not after.
+- **Staged rollout** (internal users, then a percentage, then everyone)
+  for changes that touch many users at once.
+- **Rollback in one step**, written down and tried once: redeploying the
+  previous build, not "fix forward under pressure".
+- **Error monitoring with an owner.** New errors after a deploy reach a
+  named person or channel, tagged with the release.
+
+## Access: agents never hold production keys
+
+The Bash guard blocks `DROP TABLE` as text. It cannot stop an agent that
+runs a migration against the production database because the local
+`.env` points there. That is an access question, not a hook question:
+
+- Agents and local machines get **development or staging credentials
+  only**. `.env.example` lists the variables; nobody's `.env` holds
+  production values.
+- **Production secrets live in CI and the deployment platform**, scoped
+  to the jobs that need them (environment secrets, not repository-wide).
+- **Production data stays in production.** Local work uses seed data or
+  an anonymized copy.
+- **Personal tokens for agents are scoped narrowly** (read-only where
+  that is enough, one repository rather than all) and expire.
+
 ## Scope boundary: LLM-feature guardrails
 
 This rulebook protects *our code*. Once a product itself ships LLM
