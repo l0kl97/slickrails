@@ -1045,6 +1045,7 @@ case "$*" in
   "repo view"*) echo "o/r";;
   "api -X PUT"*) cat > "$GH_BODY"; echo '{}';;
   "api repos/o/r/branches/main/protection") [ -f "$GH_READBACK" ] && cat "$GH_READBACK" || exit 1;;
+  "api repos/o/r/commits/main/check-runs"*) [ -z "${GH_RUNS:-}" ] && exit 0; [ -f "$GH_RUNS" ] && cat "$GH_RUNS" || { echo "HTTP 403: Resource not accessible" >&2; exit 1; };;
   *) exit 1;;
 esac
 GHSTUB
@@ -1055,14 +1056,80 @@ protect() { # protect <readback-json|-> [ENV=value...]  -> sets PR_OUT, PR_RC
   [ "$RB" != "-" ] && printf '%s' "$RB" > "$WORK/gh.readback"
   PR_OUT="$(env GH_BODY="$WORK/gh.body" GH_READBACK="$WORK/gh.readback" PATH="$WORK/ghstub:$PATH" "$@" sh "$KIT_DIR/scripts/setup-branch-protection.sh" 2>&1)"; PR_RC=$?
 }
-RB_ON='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true}}'
-RB_OFF='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":false}}'
+PRR='"required_pull_request_reviews":{"required_approving_review_count":0,"require_code_owner_reviews":false}'
+RB_ON='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},'"$PRR"'}'
+RB_OFF='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":false},'"$PRR"'}'
 protect "$RB_ON" X=1
 grep -q '"enforce_admins": true' "$WORK/gh.body" 2>/dev/null && ok "protection: admins are bound by the rules by default (enforce_admins true)" \
   || fail "protection: admins are bound by the rules by default (body: $(tr -d '\n ' < "$WORK/gh.body" 2>/dev/null | cut -c1-120))"
 [ "$PR_RC" -eq 0 ] && ok "protection: a matching read-back succeeds" || fail "protection: a matching read-back succeeds (exit $PR_RC)"
 case "$PR_OUT" in *"only accepts PRs"*) fail "protection: no false 'only accepts PRs' claim";; *) ok "protection: no false 'only accepts PRs' claim";; esac
-case "$PR_OUT" in *"pull request required"*"no"*|*"Pull requests are NOT required"*) ok "protection: states plainly that pull requests are not required";; *) fail "protection: states plainly that pull requests are not required";; esac
+# every change goes through a PR, without a required approval (a solo developer merges their own PR)
+grep -q '"required_approving_review_count": 0' "$WORK/gh.body" 2>/dev/null && ok "protection: pull requests are required by default, with no required approval" \
+  || fail "protection: pull requests are required by default, with no required approval (body: $(tr -d '\n ' < "$WORK/gh.body" 2>/dev/null | cut -c1-200))"
+case "$PR_OUT" in *"pull request required  : yes"*"goes through a pull request"*) ok "protection: says that every change goes through a PR";; *) fail "protection: says that every change goes through a PR";; esac
+case "$PR_OUT" in *"no check has run on main yet"*) ok "protection: without check runs it says the names could not be compared";; *) fail "protection: without check runs it says the names could not be compared";; esac
+RB_NOPR='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true}}'
+protect "$RB_NOPR" REQUIRE_PR=0
+grep -q '"required_pull_request_reviews": null' "$WORK/gh.body" 2>/dev/null && [ "$PR_RC" -eq 0 ] && ok "protection: REQUIRE_PR=0 sends no PR requirement" || fail "protection: REQUIRE_PR=0 sends no PR requirement (exit $PR_RC)"
+case "$PR_OUT" in *"Pull requests are NOT required"*) ok "protection: REQUIRE_PR=0 says plainly that pull requests are not required";; *) fail "protection: REQUIRE_PR=0 says plainly that pull requests are not required";; esac
+protect "$RB_NOPR" X=1
+[ "$PR_RC" -ne 0 ] && ok "protection: GitHub storing no PR requirement when one was asked for is a MISMATCH" || fail "protection: GitHub storing no PR requirement when one was asked for is a MISMATCH"
+# code owner reviews: opt-in, one approval, and only with PRs
+RB_CO='{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":1,"require_code_owner_reviews":true,"dismiss_stale_reviews":true,"require_last_push_approval":true}}'
+protect "$RB_CO" CODEOWNER_REVIEWS=1
+grep -q '"require_code_owner_reviews": true' "$WORK/gh.body" 2>/dev/null && grep -q '"required_approving_review_count": 1' "$WORK/gh.body" && [ "$PR_RC" -eq 0 ] \
+  && ok "protection: CODEOWNER_REVIEWS=1 asks for one approving review from a code owner" || fail "protection: CODEOWNER_REVIEWS=1 asks for one approving review from a code owner (exit $PR_RC)"
+# an approval must not survive a new push (approve a harmless change, push another, merge)
+grep -q '"dismiss_stale_reviews": true' "$WORK/gh.body" 2>/dev/null && grep -q '"require_last_push_approval": true' "$WORK/gh.body" \
+  && ok "protection: with code-owner reviews a new push dismisses the approval" || fail "protection: with code-owner reviews a new push dismisses the approval"
+case "$PR_OUT" in *"Every PR needs one approving review"*"solo developer is locked out"*) ok "protection: says the approval applies to every PR, and what that means solo";; *) fail "protection: says the approval applies to every PR, and what that means solo";; esac
+protect '{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":1,"require_code_owner_reviews":true,"dismiss_stale_reviews":false,"require_last_push_approval":true}}' CODEOWNER_REVIEWS=1
+[ "$PR_RC" -ne 0 ] && ok "protection: an approval that survives a new push is a MISMATCH" || fail "protection: an approval that survives a new push is a MISMATCH"
+protect "$RB_CO" CODEOWNER_REVIEWS=1
+case "$PR_OUT" in *"no CODEOWNERS file"*) ok "protection: CODEOWNER_REVIEWS=1 without a CODEOWNERS file says so";; *) fail "protection: CODEOWNER_REVIEWS=1 without a CODEOWNERS file says so";; esac
+protect "$RB_CO" CODEOWNER_REVIEWS=1 REQUIRE_PR=0
+[ "$PR_RC" -ne 0 ] && [ ! -f "$WORK/gh.body" ] && ok "protection: CODEOWNER_REVIEWS=1 with REQUIRE_PR=0 stops before anything is sent" || fail "protection: CODEOWNER_REVIEWS=1 with REQUIRE_PR=0 stops before anything is sent"
+protect "$RB_ON" REQUIRE_PR=sometimes
+[ "$PR_RC" -ne 0 ] && [ ! -f "$WORK/gh.body" ] && ok "protection: an unknown REQUIRE_PR value stops before anything is sent" || fail "protection: an unknown REQUIRE_PR value stops before anything is sent"
+# required checks: a matrix job reports "ci (<entry>)" and never "ci" — the names come from the branch's check runs
+printf 'ci (ubuntu-latest)\nci (macos-15)\ngitleaks\naudit\nsize\nsomething else\n' > "$WORK/gh.runs"
+RB_MX='{"required_status_checks":{"strict":true,"contexts":["ci (ubuntu-latest)","ci (macos-15)","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},'"$PRR"'}'
+protect "$RB_MX" GH_RUNS="$WORK/gh.runs"
+grep -q '"ci (ubuntu-latest)"' "$WORK/gh.body" 2>/dev/null && grep -q '"ci (macos-15)"' "$WORK/gh.body" && grep -q '"gitleaks"' "$WORK/gh.body" \
+  && ! grep -q '"ci",' "$WORK/gh.body" && ! grep -q 'something else' "$WORK/gh.body" \
+  && ok "protection: a matrix job is required by the names GitHub reports, not as plain 'ci'" \
+  || fail "protection: a matrix job is required by the names GitHub reports (body: $(tr -d '\n' < "$WORK/gh.body" 2>/dev/null | cut -c1-200))"
+[ "$PR_RC" -eq 0 ] && ok "protection: matrix names read back as requested" || fail "protection: matrix names read back as requested (exit $PR_RC: $(printf '%s' "$PR_OUT" | grep MISMATCH | head -1))"
+RB_RC='{"required_status_checks":{"strict":true,"contexts":["build","lint (node 22)"]},"enforce_admins":{"enabled":true},'"$PRR"'}'
+protect "$RB_RC" REQUIRED_CHECKS=" build ; lint (node 22) "
+tr -d '\n' < "$WORK/gh.body" 2>/dev/null | grep -q '\[ *"build", *"lint (node 22)" *\]' && [ "$PR_RC" -eq 0 ] && ok "protection: REQUIRED_CHECKS names the checks (trimmed, with spaces inside)" \
+  || fail "protection: REQUIRED_CHECKS names the checks (exit $PR_RC, body: $(tr -d '\n' < "$WORK/gh.body" 2>/dev/null | cut -c1-160))"
+# a plain (non-matrix) ci that ran: the normal steady state ends with exit 0 and no note
+printf 'ci\ngitleaks\naudit\nsize\n' > "$WORK/gh.runs3"
+protect "$RB_ON" GH_RUNS="$WORK/gh.runs3"
+[ "$PR_RC" -eq 0 ] && ok "protection: plain job names that ran on the branch end with exit 0" || fail "protection: plain job names that ran on the branch end with exit 0 (exit $PR_RC)"
+case "$PR_OUT" in *"Note:"*) fail "protection: no note when every required check ran under its name";; *) ok "protection: no note when every required check ran under its name";; esac
+# the last commit ran only some workflows (ci skipped there): the kit's name is kept, and said
+printf 'gitleaks\naudit\nsize\n' > "$WORK/gh.runs4"
+protect "$RB_ON" GH_RUNS="$WORK/gh.runs4"
+case "$PR_OUT" in *"no check named ci"*) ok "protection: a kit job missing from the branch's check runs is pointed out";; *) fail "protection: a kit job missing from the branch's check runs is pointed out";; esac
+# gh cannot list the check runs: said as a failure, not as "nothing ran yet"
+protect "$RB_ON" GH_RUNS="$WORK/does-not-exist"
+case "$PR_OUT" in *"listing the check runs on main failed"*) ok "protection: a failed check-run listing is said as such";; *) fail "protection: a failed check-run listing is said as such";; esac
+# a matrix with two dimensions reports "ci (ubuntu-latest, 20)": the comma belongs to the name
+printf 'ci (ubuntu-latest, 20)\nci (macos-15, 22)\n' > "$WORK/gh.runs2"
+RB_CM='{"required_status_checks":{"strict":true,"contexts":["ci (macos-15, 22)","ci (ubuntu-latest, 20)"]},"enforce_admins":{"enabled":true},'"$PRR"'}'
+rm -f .github/workflows/security.yml .github/workflows/pr-size.yml
+protect "$RB_CM" GH_RUNS="$WORK/gh.runs2"
+grep -q '"ci (ubuntu-latest, 20)"' "$WORK/gh.body" 2>/dev/null && grep -q '"ci (macos-15, 22)"' "$WORK/gh.body" && [ "$PR_RC" -eq 0 ] \
+  && ok "protection: a check name with a comma (two-dimension matrix) is sent and compared whole" \
+  || fail "protection: a check name with a comma is sent and compared whole (exit $PR_RC, body: $(tr -d '\n' < "$WORK/gh.body" 2>/dev/null | cut -c1-160))"
+protect "$RB_CM" REQUIRED_CHECKS="ci (ubuntu-latest, 20); ci (macos-15, 22)"
+[ "$PR_RC" -eq 0 ] && ok "protection: REQUIRED_CHECKS can name a check with a comma" || fail "protection: REQUIRED_CHECKS can name a check with a comma (exit $PR_RC)"
+: > .github/workflows/security.yml; : > .github/workflows/pr-size.yml
+protect "$RB_RC" REQUIRED_CHECKS='bad"name'
+[ "$PR_RC" -ne 0 ] && [ ! -f "$WORK/gh.body" ] && ok "protection: a check name with a quote stops before anything is sent" || fail "protection: a check name with a quote stops before anything is sent"
 protect "$RB_OFF" ENFORCE_ADMINS=0
 grep -q '"enforce_admins": false' "$WORK/gh.body" 2>/dev/null && ok "protection: ENFORCE_ADMINS=0 sends enforce_admins false" || fail "protection: ENFORCE_ADMINS=0 sends enforce_admins false"
 [ "$PR_RC" -eq 0 ] && ok "protection: ENFORCE_ADMINS=0 with a matching read-back succeeds" || fail "protection: ENFORCE_ADMINS=0 with a matching read-back succeeds (exit $PR_RC)"
@@ -1444,7 +1511,7 @@ case "$DOC_OUT" in *"PROBLEM  pre-commit lets a staged test key through"*) [ "$D
 
 # Protection script: what is compared, which values are accepted, what the stub insists on
 protect "$RB_ON" X=1
-grep -q '"contexts": \[ "ci", "gitleaks", "audit", "size" \]' "$WORK/gh.body" 2>/dev/null \
+tr -d '\n ' < "$WORK/gh.body" 2>/dev/null | grep -q '"contexts":\["ci","gitleaks","audit","size"\]' \
   && ok "protection: the request carries the required contexts" || fail "protection: the request carries the required contexts"
 protect '{"required_status_checks":{"strict":true,"contexts":["ci"]},"enforce_admins":{"enabled":true}}' X=1
 [ "$PR_RC" -ne 0 ] && case "$PR_OUT" in *MISMATCH*) ok "protection: differing status check contexts fail with MISMATCH";; *) fail "protection: differing contexts name the MISMATCH";; esac \
@@ -1452,8 +1519,11 @@ protect '{"required_status_checks":{"strict":true,"contexts":["ci"]},"enforce_ad
 protect '{"required_status_checks":{"strict":false,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true}}' X=1
 [ "$PR_RC" -ne 0 ] && ok "protection: strict=false (branch need not be up to date) is a MISMATCH" || fail "protection: strict=false is a MISMATCH"
 protect '{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":1}}' X=1
-[ "$PR_RC" -ne 0 ] && ok "protection: a review requirement nobody asked for is a MISMATCH, not 'PRs are NOT required'" \
+[ "$PR_RC" -ne 0 ] && ok "protection: a review requirement nobody asked for (1 approval instead of 0) is a MISMATCH" \
   || fail "protection: a review requirement nobody asked for is a MISMATCH (exit 0)"
+protect '{"required_status_checks":{"strict":true,"contexts":["ci","gitleaks","audit","size"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":0}}' REQUIRE_PR=0
+[ "$PR_RC" -ne 0 ] && ok "protection: with REQUIRE_PR=0 a PR requirement GitHub kept is a MISMATCH, not 'PRs are NOT required'" \
+  || fail "protection: with REQUIRE_PR=0 a PR requirement GitHub kept is a MISMATCH (exit 0)"
 protect "$RB_OFF" ENFORCE_ADMINS=off
 grep -q '"enforce_admins": false' "$WORK/gh.body" 2>/dev/null && ok "protection: ENFORCE_ADMINS=off means off" || fail "protection: ENFORCE_ADMINS=off means off"
 protect "$RB_ON" ENFORCE_ADMINS=maybe
@@ -1575,7 +1645,7 @@ if command -v jq >/dev/null 2>&1; then
 fi
 
 # The read-back compares contexts as a set: GitHub may return them in another order.
-protect '{"required_status_checks":{"strict":true,"contexts":["size","audit","gitleaks","ci"]},"enforce_admins":{"enabled":true}}' X=1
+protect '{"required_status_checks":{"strict":true,"contexts":["size","audit","gitleaks","ci"]},"enforce_admins":{"enabled":true},'"$PRR"'}' X=1
 [ "$PR_RC" -eq 0 ] && ok "protection: the same contexts in another order are not a MISMATCH" \
   || fail "protection: the same contexts in another order are not a MISMATCH (exit $PR_RC; $(printf '%s' "$PR_OUT" | tail -3 | tr '\n' ' '))"
 

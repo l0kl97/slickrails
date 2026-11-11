@@ -14,8 +14,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   every hook passed). Repository variable `SLICKRAILS_SETUP_CHECK=warn|off` is the way out
 - `.github/CODEOWNERS` template for sensitive paths (auth, payments, migrations, infrastructure, the guardrails),
   placed fully commented out; enforced with `CODEOWNER_REVIEWS=1 slickrails protect`
+- `CODEOWNER_REVIEWS=1 slickrails protect`: every PR needs one approving review, from a code owner where it touches
+  their paths; a new push dismisses the approval. Needs a second person (nobody approves their own PR)
 
 ### Changed
+- `slickrails protect` requires pull requests on main (0 approving reviews, so a solo developer merges their own PR;
+  `REQUIRE_PR=0` opts out). Before, a commit whose checks had passed could still be pushed straight to main
+- `slickrails protect` takes the required check names from the branch's last check runs: a matrix job reports
+  `ci (ubuntu-latest)` and never `ci`, which blocked every merge. `REQUIRED_CHECKS="a; b"` names them directly (`;`, since a matrix name can contain a comma)
 - `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS
   tape, header renderer) left this repo; the rendered GIFs stay for the README
 
