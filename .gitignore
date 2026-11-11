@@ -17,10 +17,3 @@
 node_modules/
 tmp/
 
-# motion graphics: sources and the final GIFs/posters are tracked, render intermediates are not
-assets/motion/out/*.mp4
-assets/motion/out/*.webm
-assets/motion/out/*.wav
-assets/motion/out/*.mov
-assets/motion/frames/
-assets/motion/.cache/

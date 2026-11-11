@@ -16,10 +16,18 @@ echo "slickrails: installing kit into $DEST"
 if [ -d "$DEST/.git" ]; then
   git -C "$DEST" pull --ff-only
 else
-  git clone --depth 1 "$REPO" "$DEST"
+  # The README's media (assets/, demo/: GIFs and the trailer, about 6 MB) are not part of the tool. A sparse clone
+  # leaves them out; a git without non-cone sparse checkout (before 2.35) falls back to the full checkout.
+  git clone --depth 1 --filter=blob:none --no-checkout "$REPO" "$DEST"
+  if ! git -C "$DEST" sparse-checkout set --no-cone '/*' '!/assets/' '!/demo/' 2>/dev/null; then
+    echo "slickrails: this git cannot leave the README media out of the clone — full checkout"
+  fi
+  git -C "$DEST" checkout -q
 fi
 
 BIN_DIR="${SLICKRAILS_BIN:-/usr/local/bin}"
+# an explicitly named bin dir is created, not silently swapped for ~/.local/bin
+[ -n "${SLICKRAILS_BIN:-}" ] && { mkdir -p "$BIN_DIR" 2>/dev/null || true; }
 if [ ! -w "$BIN_DIR" ]; then
   BIN_DIR="$HOME/.local/bin"
 fi

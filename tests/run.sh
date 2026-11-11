@@ -329,6 +329,18 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     || fail "bootstrap: clones kit, links CLI into SLICKRAILS_BIN"
   [ "$(sh "$BOOT_BIN/slickrails" version 2>/dev/null)" = "$(cat "$KIT_DIR/VERSION")" ] \
     && ok "bootstrap: the command in SLICKRAILS_BIN works" || fail "bootstrap: the command in SLICKRAILS_BIN works"
+  # the README media are not part of the tool: the clone leaves them out (a git before 2.35 gets everything)
+  if [ "$(git -C "$BOOT_HOME" config --bool core.sparseCheckout 2>/dev/null)" != "true" ]; then
+    printf 'SKIP  bootstrap: this git has no non-cone sparse checkout, the clone is complete\n'
+  elif [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
+    ok "bootstrap: the clone leaves the README media (assets/, demo/) out"
+  else fail "bootstrap: the clone leaves the README media (assets/, demo/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
+  # an explicitly named bin dir that does not exist yet is created, not swapped for ~/.local/bin
+  SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$BOOT_HOME" SLICKRAILS_BIN="$WORK/boot-bin-new/sub" HOME="$WORK/boot-fakehome" \
+    sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
+  [ -x "$WORK/boot-bin-new/sub/slickrails" ] && [ ! -e "$WORK/boot-fakehome/.local/bin/slickrails" ] \
+    && ok "bootstrap: a SLICKRAILS_BIN that does not exist yet is created and used" \
+    || fail "bootstrap: a SLICKRAILS_BIN that does not exist yet is created and used"
   # Git Bash without symlink permission: `ln -s` copies. A copy of bin/slickrails would look for the kit next to itself.
   mkdir -p "$WORK/copy-ln" "$WORK/boot-bin2"
   printf '#!/bin/sh\n# ln that copies, like Git Bash without symlink permission\nfor a in "$@"; do case "$a" in -*) ;; *) set -- "$@" "$a";; esac; shift; done\ncp "$1" "$2"\n' > "$WORK/copy-ln/ln"
