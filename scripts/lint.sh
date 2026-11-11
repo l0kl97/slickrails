@@ -14,5 +14,5 @@ exec shellcheck -s sh -e SC1090,SC1091,SC2015,SC2164,SC2094 \
   install.sh bootstrap.sh bin/slickrails tests/run.sh \
   scripts/setup-branch-protection.sh scripts/status.sh scripts/lint.sh \
   templates/hooks/pre-commit templates/hooks/pre-push templates/hooks/commit-msg templates/hooks/post-merge \
-  templates/session-check.sh templates/bash-guard.sh templates/dep-check.sh \
+  templates/session-check.sh templates/bash-guard.sh templates/dep-check.sh templates/setup-check.sh \
   templates/gate.sh templates/gate/pre-receive templates/ai-review.sh templates/draft-dossier.sh
