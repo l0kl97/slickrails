@@ -9,9 +9,9 @@ distribution and first impression decide the rest.
 - [ ] Create repo `slickrails`, push, add topics: `ai`, `claude`,
       `git-hooks`, `code-review`, `guardrails`, `vibe-coding`,
       `developer-tools`
-- [x] Demo GIF recorded (demo/slickrails-demo.gif, embedded in both READMEs); re-record: `sh demo/setup-demo-repo.sh /tmp/demo && cd /tmp/demo && vhs < <kit>/demo/demo.tape`;
+- [x] Demo GIF recorded (demo/slickrails-demo.gif, embedded in both READMEs); re-record from the media sources in the maintainer's archive repo (`demo/`);
       already embedded at the top of both READMEs
-- [x] Header rendered to `assets/header.png` (regenerate: `sh assets/render-header.sh`),
+- [x] Header rendered to `assets/header.png` (regenerate from the media sources in the maintainer's archive repo),
       reference it in the README above the fold
 - [ ] Tag `v1.3.0`, create a GitHub release; fill the Homebrew formula
       (`packaging/homebrew/slickrails.rb`) with the tarball sha256 and
@@ -30,9 +30,9 @@ distribution and first impression decide the rest.
       Seen on the kit repo on 2026-10-22: without the app the review fails loudly ("Claude Code is not
       installed on this repository"), as it should
 - [ ] Trust flow by hand: new project hooks in Claude Code (dialog) and Codex (`/hooks`), then a red-check session must block
-- [x] Motion graphics rendered (`assets/motion/`, all GIFs ≤ 1.5 MB, loop seams identical per `out/REPORT.md`) and
+- [x] Motion graphics rendered (`assets/motion/`, all GIFs ≤ 1.5 MB, loop seams checked by the render pipeline in the maintainer's archive repo) and
       embedded in both READMEs; still to look at once on the real GitHub page (camo proxy, phone) after the push.
-      The 15 s showreel (mp4/webm with soundtrack) is not in the repo: re-render with `node render.mjs --reel-only`
+      The 15 s showreel (mp4/webm with soundtrack) is not in the repo: re-render it in the archive repo with `node render.mjs --reel-only`
 - [ ] Tag date in `CHANGELOG.md` ([1.3.0]) matches the release day; `npm/package.json` and the Homebrew URL are 1.3.0
 
 ## Launch day (all channels the same day)
