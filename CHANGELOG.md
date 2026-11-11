@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-11-12
+
+From an outside review of 1.4.0, read from the view of a company where people without an engineering background
+ship code through agents: the hard boundary belongs on the server, a broken setup must not be silent, and the
+guardrails should say what happens after the merge.
+
 ### Added
 - Rulebook chapters "After the merge: the deploy layer" (feature flags, preview environments, staged rollout,
   rollback, error monitoring) and "Access: agents never hold production keys", English and German — recommendations,
@@ -29,6 +35,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 - `bootstrap.sh` builds a fresh clone next to the install dir and moves it into place when the checkout is complete;
   an install with a `.git` but no files (interrupted checkout) is checked out on the next run
 - `bootstrap.sh` creates a `SLICKRAILS_BIN` that does not exist yet instead of linking into `~/.local/bin`
+- Tests: the package check without jq and node clears registry settings of the host and says why it failed
 
 ## [1.4.0] — 2026-11-05
 
