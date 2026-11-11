@@ -1,0 +1,29 @@
+# slickrails: CODEOWNERS (rule 5) — who must review changes to sensitive paths.
+#
+# The AI review judges every PR, but someone who builds with an agent often cannot judge the verdict. For the
+# paths below a named engineer should approve, whatever the AI said. Every line is commented out on purpose:
+# replace the paths with your repo's own and @your-org/your-team with real GitHub users or teams, then remove the #.
+# It only blocks merges once branch protection asks for it:  CODEOWNER_REVIEWS=1 slickrails protect
+# A solo developer cannot approve their own PR — leave this off until there is a second person.
+#
+# Syntax: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Authentication, sessions, permissions
+# /src/auth/                        @your-org/your-team
+# /src/**/permissions*              @your-org/your-team
+
+# Payments and billing
+# /src/billing/                     @your-org/your-team
+
+# Database migrations and schema
+# /migrations/                      @your-org/your-team
+# /prisma/schema.prisma             @your-org/your-team
+
+# Infrastructure, deployment, CI
+# /infra/                           @your-org/your-team
+# /.github/workflows/               @your-org/your-team
+
+# The guardrails themselves
+# /.slickrails/                     @your-org/your-team
+# /.githooks/                       @your-org/your-team
+# /.github/CODEOWNERS               @your-org/your-team
