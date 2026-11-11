@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Changed
+- `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout; a git before
+  2.35 gets the full checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS
+  tape, header renderer) left this repo; the rendered GIFs stay for the README
+
+### Fixed
+- `bootstrap.sh` creates a `SLICKRAILS_BIN` that does not exist yet instead of linking into `~/.local/bin`
+
 ## [1.4.0] — 2026-11-05
 
 First public release. The history before it lives in a private repository; the feature dossiers in
