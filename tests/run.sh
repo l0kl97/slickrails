@@ -337,6 +337,7 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   # a half install (a .git without files, the checkout was interrupted) is completed on the next run
   # (one commit behind upstream: the pull must not take the missing files for deletions)
   rm -rf "$WORK/boot-up" "$WORK/boot-half"; git clone -q "$KIT_DIR" "$WORK/boot-up" 2>/dev/null
+  git -C "$WORK/boot-up" checkout -q -B main   # CI checks out a detached merge commit; a pull needs a branch
   git clone -q --no-checkout "$WORK/boot-up" "$WORK/boot-half" 2>/dev/null
   ( cd "$WORK/boot-up" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m "upstream moved on" )
   SLICKRAILS_REPO="$WORK/boot-up" SLICKRAILS_HOME="$WORK/boot-half" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
