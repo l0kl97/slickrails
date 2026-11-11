@@ -95,7 +95,7 @@ for a body; the installer prints a command that passes.
 | PR (opt-in) | `claude-review.yml` via `slickrails github-review` — the same review server-side, for teams that want it enforced on GitHub | the same, on every PR; opens with a walkthrough, findings risk-ranked |
 | Push (opt-in) | local gate: `git push gate <branch>` | the pushed commit is checked in a disposable worktree and forwarded only on green |
 | PR (opt-in) | Anthropic security-review action | deep semantic security analysis, line-level comments (trusted PRs only) |
-| Merge | branch protection script | direct pushes to main |
+| Merge | `slickrails protect` | direct pushes to main (every change through a PR with green checks; optional code-owner review) |
 | After merge | `post-merge` hook | code landing without a dossier or changelog entry |
 | Forever | feature dossiers (`docs/features/`) | "nobody remembers why this exists" |
 

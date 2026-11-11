@@ -37,10 +37,14 @@ nochmal im CI — doppelter Boden.
 ### 5. main ist geschützt
 Auf `main`/`master` wird nie direkt gepusht. Änderungen gehen über
 Branches + PR, und der PR merged nur mit grünem CI. Branch Protection
-wird per `slickrails protect` (gh CLI) eingerichtet; das
-Skript liest die Einstellungen von GitHub zurück und meldet, was wirklich
-gilt: Pflicht-Statuschecks allein erzwingen keinen PR, und Admins sind nur
-gebunden, solange nicht `ENFORCE_ADMINS=0` gesetzt ist.
+wird per `slickrails protect` (gh CLI) eingerichtet: Jede Änderung geht
+über einen PR mit grünen Pflicht-Checks (ohne Pflicht-Freigabe, funktioniert
+also auch solo; `REQUIRE_PR=0` schaltet das ab), Admins sind mitgebunden
+(`ENFORCE_ADMINS=0` schaltet das ab), und `CODEOWNER_REVIEWS=1` ergänzt ein
+menschliches Review: Jeder PR braucht dann eine Freigabe, bei sensiblen
+Pfaden von der benannten Person (siehe `.github/CODEOWNERS`), und ein
+neuer Push hebt sie wieder auf. Das Skript liest die Einstellungen von GitHub zurück
+und meldet, was wirklich gilt.
 
 ### 6. Jeder PR bekommt ein AI-Review
 Vor dem Merge läuft ein Review — standardmäßig lokal vor jedem Push mit dem
