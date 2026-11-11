@@ -146,6 +146,46 @@ Menschen (`SLICKRAILS_ALLOW_BYPASS=1` bzw. `SLICKRAILS_ALLOW_DESTRUCTIVE=1` in
 der Umgebung des Agenten, oder er führt den Befehl selbst aus). Das ist
 ein Hinweis, keine Grenze — CI und Branch Protection halten wirklich.
 
+## Nach dem Merge: die Deploy-Ebene (Empfehlung)
+
+Die Regeln oben entscheiden, was in `main` landet. Wie schnell eine
+schlechte Änderung wieder rauskommt, regeln sie nicht, und wenn viele
+Leute über Agenten ausliefern, zählt das genauso viel wie das Review.
+slickrails installiert davon nichts; es ist die Checkliste, an der wir
+ein Projekt messen, bevor mehr als eine Handvoll Leute hineinmergen:
+
+- **Feature Flags für alles, was Nutzer sehen.** Ein Merge hinter einem
+  Flag lässt sich in Sekunden abschalten, ohne Revert und ohne Deploy.
+  Für Builder-Teams bringt das mehr als eine weitere Review-Runde: Jeder
+  Merge bleibt umkehrbar.
+- **Eine Preview-Umgebung pro PR**, damit die Person, die die Änderung
+  wollte, sie vor dem Merge durchklickt und nicht danach.
+- **Gestaffelter Rollout** (intern, dann ein Prozentsatz, dann alle) für
+  Änderungen, die viele Nutzer auf einmal treffen.
+- **Rollback in einem Schritt**, aufgeschrieben und einmal ausprobiert:
+  den vorigen Build neu ausrollen, nicht „unter Druck nach vorne fixen“.
+- **Fehler-Monitoring mit Zuständigen.** Neue Fehler nach einem Deploy
+  landen bei einer benannten Person oder in einem Kanal, mit dem Release
+  markiert.
+
+## Zugriffe: Agenten halten keine Produktions-Schlüssel
+
+Der Bash-Guard blockt `DROP TABLE` als Text. Er hält keinen Agenten
+auf, der eine Migration gegen die Produktionsdatenbank laufen lässt,
+weil die lokale `.env` dorthin zeigt. Das ist eine Frage der Zugriffe,
+nicht der Hooks:
+
+- Agenten und lokale Rechner bekommen **nur Entwicklungs- oder
+  Staging-Zugänge**. `.env.example` listet die Variablen; in keiner
+  lokalen `.env` stehen Produktionswerte.
+- **Produktions-Secrets liegen in CI und auf der Deployment-Plattform**,
+  beschränkt auf die Jobs, die sie brauchen (Environment-Secrets, nicht
+  repo-weit).
+- **Produktionsdaten bleiben in Produktion.** Lokal wird mit Seed-Daten
+  oder einer anonymisierten Kopie gearbeitet.
+- **Persönliche Tokens für Agenten sind eng gefasst** (nur lesend, wo das
+  reicht, ein Repository statt alle) und laufen ab.
+
 ## Abgrenzung: LLM-Feature-Guardrails
 
 Dieses Regelwerk sichert *unseren Code*. Sobald ein Produkt selbst
