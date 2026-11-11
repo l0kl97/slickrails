@@ -87,4 +87,5 @@ In the archive repository:
   `package.json`) → the sources moved to the private archive repo, the rendered media stay for the README, and
   `bootstrap.sh` leaves `assets/` and `demo/` out of the clone. Rejected: a separate public media repo (one more
   repo to keep in sync for files only the README uses), taking the media to the private archive (the README could
-  not show them).
+  not show them). First CI run: on Windows the media were still cloned — Git Bash rewrote the sparse patterns
+  (`'/*'`, `'!/assets/'`) into Windows paths → the patterns are written into `.git/info/sparse-checkout` instead.

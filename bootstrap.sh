@@ -16,12 +16,13 @@ echo "slickrails: installing kit into $DEST"
 if [ -d "$DEST/.git" ]; then
   git -C "$DEST" pull --ff-only
 else
-  # The README's media (assets/, demo/: GIFs and the trailer, about 6 MB) are not part of the tool. A sparse clone
-  # leaves them out; a git without non-cone sparse checkout (before 2.35) falls back to the full checkout.
+  # The README's media (assets/, demo/: GIFs and the trailer, about 6 MB) are not part of the tool. A sparse checkout
+  # leaves them out. The patterns go into the sparse file, not on the command line: Git Bash rewrites arguments that
+  # start with / into Windows paths, and the file works with any git since 1.7.
   git clone --depth 1 --filter=blob:none --no-checkout "$REPO" "$DEST"
-  if ! git -C "$DEST" sparse-checkout set --no-cone '/*' '!/assets/' '!/demo/' 2>/dev/null; then
-    echo "slickrails: this git cannot leave the README media out of the clone — full checkout"
-  fi
+  git -C "$DEST" config core.sparseCheckout true
+  mkdir -p "$DEST/.git/info"   # a clone template without info/ (init.templateDir with hooks only) leaves it out
+  printf '/*\n!/assets/\n!/demo/\n' > "$DEST/.git/info/sparse-checkout"
   git -C "$DEST" checkout -q
 fi
 
