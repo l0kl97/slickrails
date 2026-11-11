@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: slickrails setup
+        # fails when the guardrails (git hooks, checks in config.sh, agent session hooks) are missing or empty;
+        # repository variable SLICKRAILS_SETUP_CHECK=warn reports only, =off skips
+        env:
+          SLICKRAILS_SETUP_CHECK: ${{ vars.SLICKRAILS_SETUP_CHECK }}
+        run: sh .slickrails/setup-check.sh
+
       - name: Detect package manager
         id: pm
         run: |

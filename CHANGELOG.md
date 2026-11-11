@@ -9,6 +9,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 - Rulebook chapters "After the merge: the deploy layer" (feature flags, preview environments, staged rollout,
   rollback, error monitoring) and "Access: agents never hold production keys", English and German — recommendations,
   nothing is installed
+- Setup check in CI: the `ci` job of every stack template runs `.slickrails/setup-check.sh` and fails when the git
+  hooks, the checks in `config.sh` or the agents' session hooks are missing or empty (a broken setup was silent:
+  every hook passed). Repository variable `SLICKRAILS_SETUP_CHECK=warn|off` is the way out
+- `.github/CODEOWNERS` template for sensitive paths (auth, payments, migrations, infrastructure, the guardrails),
+  placed fully commented out; enforced with `CODEOWNER_REVIEWS=1 slickrails protect`
 
 ### Changed
 - `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS

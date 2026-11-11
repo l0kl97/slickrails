@@ -211,7 +211,7 @@ while [ $# -gt 0 ]; do
         elif grep -Eq "^[[:space:]]*(CHECK_TYPECHECK|CHECK_TEST|CHECK_SESSION)=(\"[^\"]+\"|'[^']+'|[^\"'[:space:]#]+)" "$DOC_CFG"; then
           say "  ok       .slickrails/config.sh defines checks"
         else
-          say "  WARN     no checks configured in .slickrails/config.sh (CHECK_TYPECHECK/CHECK_TEST/CHECK_SESSION are empty) — nothing is checked"
+          say "  WARN     no checks configured in .slickrails/config.sh (CHECK_TYPECHECK/CHECK_TEST/CHECK_SESSION are empty) — nothing is checked, and the setup check in CI fails"
         fi
         # an older config.sh (never overwritten) may predate the local review; say so when a reviewer CLI is here
         if ! grep -Eq '^[[:space:]]*CHECK_PREPUSH_REVIEW=("1"|'"'"'1'"'"'|1)' "$DOC_CFG"; then
@@ -484,6 +484,12 @@ REVIEW_PROFILE="chill"
 REVIEW_ON_ERROR="warn"
 EOF
   say "  + .slickrails/config.sh (stack: $STACK — adjust as needed)"
+  # nothing to check found for this stack (Python without tests/, a yarn project without a test script, …): every hook
+  # would pass, and the setup check in CI fails until a check is named — said now, not on the first PR
+  if [ -z "$CHECK_TYPECHECK" ] && [ -z "$CHECK_TEST" ]; then
+    warn "no test or typecheck command found for this $STACK project — .slickrails/config.sh checks nothing, so every hook passes."
+    warn "Set CHECK_TEST (and CHECK_TYPECHECK) there. Until then the 'slickrails setup' step in CI fails (repository variable SLICKRAILS_SETUP_CHECK=warn reports only)."
+  fi
 fi
 
 # ----------------------------------------------------------------- hooks ----
@@ -532,13 +538,19 @@ mkdir -p docs/features
 [ -f docs/features/README.md ]    || { cp "$(tpl docs-readme.md)" docs/features/README.md; added docs/features/README.md; }
 [ -f docs/features/_TEMPLATE.md ] || { cp "$(tpl feature-dossier.md)" docs/features/_TEMPLATE.md; added docs/features/_TEMPLATE.md; }
 place "$(tpl pr-template.md)" ".github/PULL_REQUEST_TEMPLATE.md"
+# CODEOWNERS for sensitive paths: every line commented out until the repo names real people (enforced only with
+# CODEOWNER_REVIEWS=1 slickrails protect). An existing CODEOWNERS anywhere GitHub looks is left alone.
+if [ ! -f .github/CODEOWNERS ] && [ ! -f CODEOWNERS ] && [ ! -f docs/CODEOWNERS ]; then
+  cp "$KIT_DIR/templates/codeowners" .github/CODEOWNERS; added .github/CODEOWNERS
+fi
 
 # ------------------------------------------ AI-session enforcement ----------
 place "$KIT_DIR/templates/session-check.sh" ".slickrails/session-check.sh"
 place "$KIT_DIR/templates/ai-review.sh"     ".slickrails/ai-review.sh"
 place "$KIT_DIR/templates/bash-guard.sh"    ".slickrails/bash-guard.sh"
 place "$KIT_DIR/templates/dep-check.sh"     ".slickrails/dep-check.sh"
-chmod +x .slickrails/session-check.sh .slickrails/ai-review.sh .slickrails/bash-guard.sh .slickrails/dep-check.sh 2>/dev/null || true
+place "$KIT_DIR/templates/setup-check.sh"   ".slickrails/setup-check.sh"
+chmod +x .slickrails/session-check.sh .slickrails/ai-review.sh .slickrails/bash-guard.sh .slickrails/dep-check.sh .slickrails/setup-check.sh 2>/dev/null || true
 
 # Agent hook configuration: the same Stop gate and Bash guard for Claude Code and for the Codex CLI.
 case "$AGENT" in

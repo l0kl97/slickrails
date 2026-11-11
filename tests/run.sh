@@ -125,6 +125,54 @@ AFTER="$(find . -not -path './.git/*' | sort)"
 [ "$BEFORE" = "$AFTER" ] && ! ls ./*.slickrails-new >/dev/null 2>&1 \
   && ok "installer: second run is idempotent" || fail "installer: second run is idempotent"
 
+# CODEOWNERS: placed fully commented out (nothing is enforced until the repo names real people), never over an existing one
+[ -f .github/CODEOWNERS ] && ! grep -Eq '^[[:space:]]*[^#[:space:]]' .github/CODEOWNERS \
+  && ok "installer: .github/CODEOWNERS is placed with every line commented out" || fail "installer: .github/CODEOWNERS is placed with every line commented out"
+grep -q 'setup-check.sh' .github/workflows/ci.yml && [ -x .slickrails/setup-check.sh ] \
+  && ok "installer: the CI workflow runs the slickrails setup check" || fail "installer: the CI workflow runs the slickrails setup check"
+new_repo owners-repo
+printf '{"name":"t"}' > package.json; printf '* @someone\n' > CODEOWNERS
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+[ ! -f .github/CODEOWNERS ] && [ "$(cat CODEOWNERS)" = "* @someone" ] \
+  && ok "installer: an existing CODEOWNERS (repo root) is left alone, no second one" || fail "installer: an existing CODEOWNERS (repo root) is left alone, no second one"
+
+# The setup check (CI): passes on a fresh install, fails when the guardrails are missing or check nothing
+sc() { # sc <expected-exit> <description> [ENV=value...]
+  SC_WANT="$1"; SC_DESC="$2"; shift 2
+  SC_OUT="$(env "$@" sh .slickrails/setup-check.sh 2>&1)"; SC_RC=$?
+  if [ "$SC_RC" -eq "$SC_WANT" ]; then ok "setup check: $SC_DESC"; else fail "setup check: $SC_DESC (exit $SC_RC: $(printf '%s' "$SC_OUT" | grep PROBLEM | head -2 | tr '\n' ' '))"; fi
+}
+new_repo setup-check-repo
+printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+sc 0 "a fresh install passes" X=1
+cp .slickrails/config.sh "$WORK/sc-config.bak"
+sed -E 's/^(CHECK_[A-Z_]+)=.*/\1=""/' "$WORK/sc-config.bak" > .slickrails/config.sh
+sc 1 "a config.sh that checks nothing fails" X=1
+case "$SC_OUT" in *"checks nothing"*) ok "setup check: ...and says that nothing is checked";; *) fail "setup check: ...and says that nothing is checked";; esac
+printf "CHECK_TEST='npm test'\n" > .slickrails/config.sh
+sc 0 "a single-quoted check counts" X=1
+printf 'CHECK_TEST=""  # CHECK_TEST="npm test"\n' > .slickrails/config.sh
+sc 1 "a check that is only in a comment does not count" X=1
+cp "$WORK/sc-config.bak" .slickrails/config.sh
+mv .githooks/pre-push "$WORK/sc-pre-push.bak"
+sc 1 "a missing pre-push hook fails" X=1
+sc 0 "SLICKRAILS_SETUP_CHECK=warn reports without failing" SLICKRAILS_SETUP_CHECK=warn
+case "$SC_OUT" in *PROBLEM*"pre-push"*) ok "setup check: ...but still names the problem";; *) fail "setup check: ...but still names the problem";; esac
+sc 0 "SLICKRAILS_SETUP_CHECK=off skips" SLICKRAILS_SETUP_CHECK=off
+sc 1 "an unknown SLICKRAILS_SETUP_CHECK value checks with block" SLICKRAILS_SETUP_CHECK=maybe
+mv "$WORK/sc-pre-push.bak" .githooks/pre-push
+rm -f .claude/settings.json .codex/hooks.json
+sc 1 "no agent session hooks fails" X=1
+# a stack without a detectable check (Python without tests/): the installer says so at once, and CI fails until one is set
+new_repo setup-empty-repo
+touch requirements.txt
+SE_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+case "$SE_OUT" in *"checks nothing"*"setup"*"CI fails"*) ok "installer: a project without a detectable check is told that config.sh checks nothing and CI will fail";;
+  *) fail "installer: a project without a detectable check is told that config.sh checks nothing and CI will fail";; esac
+sc 1 "a fresh install without a detectable check fails (the installer said so)" X=1
+case "$(sh "$KIT_DIR/install.sh" doctor 2>&1)" in *"no checks configured"*"setup check in CI fails"*) ok "doctor: an empty config.sh names the CI consequence too";; *) fail "doctor: an empty config.sh names the CI consequence too";; esac
+
 new_repo py-repo
 touch requirements.txt; mkdir -p tests
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
