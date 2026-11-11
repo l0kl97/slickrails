@@ -15,6 +15,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   tape, header renderer) left this repo; the rendered GIFs stay for the README
 
 ### Fixed
+- `bootstrap.sh` builds a fresh clone next to the install dir and moves it into place when the checkout is complete;
+  an install with a `.git` but no files (interrupted checkout) is checked out on the next run
 - `bootstrap.sh` creates a `SLICKRAILS_BIN` that does not exist yet instead of linking into `~/.local/bin`
 
 ## [1.4.0] — 2026-11-05

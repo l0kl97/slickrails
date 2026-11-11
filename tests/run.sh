@@ -334,6 +334,35 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   if [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
     ok "bootstrap: the clone leaves the README media (assets/, demo/) out"
   else fail "bootstrap: the clone leaves the README media (assets/, demo/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
+  # a half install (a .git without files, the checkout was interrupted) is completed on the next run
+  # (one commit behind upstream: the pull must not take the missing files for deletions)
+  rm -rf "$WORK/boot-up" "$WORK/boot-half"; git clone -q "$KIT_DIR" "$WORK/boot-up" 2>/dev/null
+  git clone -q --no-checkout "$WORK/boot-up" "$WORK/boot-half" 2>/dev/null
+  ( cd "$WORK/boot-up" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m "upstream moved on" )
+  SLICKRAILS_REPO="$WORK/boot-up" SLICKRAILS_HOME="$WORK/boot-half" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
+  [ -f "$WORK/boot-half/install.sh" ] && [ "$(git -C "$WORK/boot-half" log -1 --format=%s 2>/dev/null)" = "upstream moved on" ] \
+    && ok "bootstrap: a half install one commit behind is checked out and updated on the next run" \
+    || fail "bootstrap: a half install one commit behind is checked out and updated on the next run"
+  # an empty SLICKRAILS_HOME made beforehand is used; a non-empty one that is no clone is refused, not nested into
+  rm -rf "$WORK/boot-empty"; mkdir -p "$WORK/boot-empty"
+  SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$WORK/boot-empty" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
+  [ -f "$WORK/boot-empty/install.sh" ] && ok "bootstrap: an empty SLICKRAILS_HOME made beforehand is used" || fail "bootstrap: an empty SLICKRAILS_HOME made beforehand is used"
+  rm -rf "$WORK/boot-busy"; mkdir -p "$WORK/boot-busy"; : > "$WORK/boot-busy/notes.txt"
+  SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$WORK/boot-busy" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1
+  BB_RC=$?
+  [ "$BB_RC" -ne 0 ] && [ ! -e "$WORK/boot-busy.partial" ] && [ "$(ls "$WORK/boot-busy")" = "notes.txt" ] \
+    && ok "bootstrap: a non-empty SLICKRAILS_HOME that is no clone is refused, nothing nested into it" \
+    || fail "bootstrap: a non-empty SLICKRAILS_HOME that is no clone is refused (exit $BB_RC)"
+  # an interrupted fresh clone leaves only $DEST.partial, which the next run replaces
+  rm -rf "$WORK/boot-fresh" "$WORK/boot-fresh.partial"; mkdir -p "$WORK/boot-fresh.partial/.git"
+  SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$WORK/boot-fresh" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
+  [ -f "$WORK/boot-fresh/install.sh" ] && [ ! -e "$WORK/boot-fresh.partial" ] \
+    && ok "bootstrap: a leftover partial clone is replaced, the kit lands in place" || fail "bootstrap: a leftover partial clone is replaced, the kit lands in place"
+  # a SLICKRAILS_HOME with a trailing slash: the clone is built next to it, not inside it
+  rm -rf "$WORK/boot-slash" "$WORK/boot-slash.partial"
+  SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$WORK/boot-slash/" SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
+  [ -f "$WORK/boot-slash/install.sh" ] && [ ! -e "$WORK/boot-slash/.partial" ] && [ ! -e "$WORK/boot-slash.partial" ] \
+    && ok "bootstrap: a SLICKRAILS_HOME with a trailing slash works" || fail "bootstrap: a SLICKRAILS_HOME with a trailing slash works"
   # an explicitly named bin dir that does not exist yet is created, not swapped for ~/.local/bin
   SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$BOOT_HOME" SLICKRAILS_BIN="$WORK/boot-bin-new/sub" HOME="$WORK/boot-fakehome" \
     sh "$KIT_DIR/bootstrap.sh" >/dev/null 2>&1 || true
