@@ -1403,10 +1403,16 @@ printf '{"tool_name":"Edit","tool_input":{"file_path":"/r/.slickrails/bash-guard
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/r/src/app.ts"}}' | env PATH="$NOJQ_BASE" sh "$KIT_DIR/templates/bash-guard.sh" >/dev/null 2>&1
 [ $? -eq 0 ] && ok "bash-guard without jq and node: an Edit on ordinary code passes" || fail "bash-guard without jq and node: an Edit on ordinary code passes"
 # the package check without jq and node: the decoys must not win there either
+# (an outside review saw both fail once in an Ubuntu container: registry settings of the host are cleared here, and a
+# failure prints what the check said and which tools it found, so the next one can be told apart from a host quirk)
 for DC in "npm install decoy-npm" "pip install decoy-py"; do
-  printf '%s\n' "$DC" | env HOME="$DEPFIX/home" PATH="$DEPFIX/bin:$NOJQ_BASE" sh "$KIT_DIR/templates/dep-check.sh" >/dev/null 2>&1
-  [ $? -eq 2 ] && ok "package check without jq and node: $DC is still judged by the registry's date" \
-    || fail "package check without jq and node: $DC is still judged by the registry's date"
+  printf '%s\n' "$DC" | env -u NPM_CONFIG_REGISTRY -u npm_config_registry -u PIP_INDEX_URL -u UV_INDEX_URL -u UV_DEFAULT_INDEX \
+    HOME="$DEPFIX/home" PATH="$DEPFIX/bin:$NOJQ_BASE" sh "$KIT_DIR/templates/dep-check.sh" >"$DEPFIX/nojq.out" 2>&1
+  DC_RC=$?
+  if [ "$DC_RC" -eq 2 ]; then ok "package check without jq and node: $DC is still judged by the registry's date"
+  else
+    fail "package check without jq and node: $DC is still judged by the registry's date (exit $DC_RC: $(head -3 "$DEPFIX/nojq.out" | tr '\n' ' ')| tools: $(for T in awk sed grep sort date mktemp; do printf '%s=%s ' "$T" "$(PATH="$NOJQ_BASE" command -v "$T" >/dev/null 2>&1 && echo yes || echo NO)"; done)| /etc/pip.conf: $([ -f /etc/pip.conf ] && echo present || echo none))"
+  fi
 done
 FOOLED='{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo .slickrails/session-check.sh .slickrails/bash-guard.sh"}]}]}}'
 
