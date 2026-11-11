@@ -329,10 +329,9 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     || fail "bootstrap: clones kit, links CLI into SLICKRAILS_BIN"
   [ "$(sh "$BOOT_BIN/slickrails" version 2>/dev/null)" = "$(cat "$KIT_DIR/VERSION")" ] \
     && ok "bootstrap: the command in SLICKRAILS_BIN works" || fail "bootstrap: the command in SLICKRAILS_BIN works"
-  # the README media are not part of the tool: the clone leaves them out (a git before 2.35 gets everything)
-  if [ "$(git -C "$BOOT_HOME" config --bool core.sparseCheckout 2>/dev/null)" != "true" ]; then
-    printf 'SKIP  bootstrap: this git has no non-cone sparse checkout, the clone is complete\n'
-  elif [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
+  # the README media are not part of the tool: the clone leaves them out (on Windows too, where Git Bash rewrites
+  # arguments that look like paths)
+  if [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
     ok "bootstrap: the clone leaves the README media (assets/, demo/) out"
   else fail "bootstrap: the clone leaves the README media (assets/, demo/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
   # an explicitly named bin dir that does not exist yet is created, not swapped for ~/.local/bin

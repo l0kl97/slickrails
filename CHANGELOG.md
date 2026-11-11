@@ -6,8 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 ## [Unreleased]
 
 ### Changed
-- `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout; a git before
-  2.35 gets the full checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS
+- `bootstrap.sh` clones without the README media (`assets/`, `demo/`, about 6 MB) by sparse checkout. The sources of the README media (motion pipeline with its own `package.json`, VHS
   tape, header renderer) left this repo; the rendered GIFs stay for the README
 
 ### Fixed
