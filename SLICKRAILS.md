@@ -76,8 +76,8 @@ before workflows run. The template pins the action to a commit SHA
 alone only scans the first one) and skips fork PRs.
 
 ### 7. Dependencies under control
-Dependabot is enabled, and the security workflow runs `npm audit` /
-`pip-audit` (per stack) on every PR. Known CVEs block the merge.
+Dependabot is enabled, and the security workflow runs the stack's audit
+(npm, pnpm, pip, Go, Rust, Ruby) on every PR. Known CVEs block the merge.
 
 ### 8. Definition of Done
 A feature is done when: code + tests + docs update exist and the smoke

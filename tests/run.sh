@@ -2160,10 +2160,41 @@ else
   printf 'SKIP  workflow templates: no YAML parser (python3 with PyYAML, or ruby) — validity not checked\n'
 fi
 
+# ---- the templates are as current as the kit's own workflows (which Dependabot keeps current) --------------------
+# (found 2026-11-12: the kit ran actions/checkout@v7, every template still shipped v4)
+ACT_BAD=""
+OWN_ACTIONS="$(grep -rhoE 'uses: +[A-Za-z0-9_./-]+@[A-Za-z0-9.]+' "$KIT_DIR/.github/workflows" | sed 's/uses: *//' | sort -u)"
+for A in $OWN_ACTIONS; do
+  grep -rhoE "uses: +${A%@*}@[A-Za-z0-9.]+" "$KIT_DIR/templates/workflows" "$KIT_DIR/actions" | sed 's/uses: *//' | sort -u | grep -vxF "$A" >/dev/null \
+    && ACT_BAD="$ACT_BAD ${A%@*}"
+done
+[ -z "$ACT_BAD" ] && ok "workflow templates: every action the kit's own workflows use has the same version in the templates" \
+  || fail "workflow templates: other action versions than the kit's own workflows (bump the templates:$ACT_BAD)"
+# one set of checks: every stack's CI runs the commands from .slickrails/config.sh, like the local hooks
+CFG_BAD=""
+for WF in "$KIT_DIR"/templates/workflows/ci-*.yml; do grep -q '\. \./\.slickrails/config\.sh' "$WF" || CFG_BAD="$CFG_BAD $(basename "$WF")"; done
+# ...and that step, taken out of every template and run as the workflow would run it: tests run, a skipped typecheck
+# is said, and an empty test command, a failing test and a failing typecheck are each red
+new_repo ci-step-repo
+mkdir .slickrails
+STEP_BAD=""
+for WF in "$KIT_DIR"/templates/workflows/ci-*.yml; do
+  awk '/name: Checks \(/{f=1; next} f && /^        run: \|/{r=1; next} r && /^      - /{exit} r {sub(/^          /, ""); print}' "$WF" > "$WORK/ci-step.sh"
+  step_rc() { printf 'CHECK_TYPECHECK="%s"\nCHECK_TEST="%s"\n' "$1" "$2" > .slickrails/config.sh; CS_OUT="$(bash -e "$WORK/ci-step.sh" 2>&1)"; }
+  step_rc "" "echo ran-tests" && case "$CS_OUT" in *"skip: CHECK_TYPECHECK is empty"*"ran-tests"*) ;; *) false;; esac || STEP_BAD="$STEP_BAD $(basename "$WF"):green"
+  step_rc "true" ""      && STEP_BAD="$STEP_BAD $(basename "$WF"):empty-test"
+  step_rc "true" "false" && STEP_BAD="$STEP_BAD $(basename "$WF"):red-test"
+  step_rc "false" "echo ran-tests" && STEP_BAD="$STEP_BAD $(basename "$WF"):red-typecheck"
+  case "$CS_OUT" in *ran-tests*) STEP_BAD="$STEP_BAD $(basename "$WF"):tests-after-red-typecheck";; esac
+done
+[ -z "$STEP_BAD" ] && ok "CI checks step (every stack): green runs the tests; empty or failing tests and a failing typecheck are red" \
+  || fail "CI checks step (every stack): wrong outcome for$STEP_BAD"
+[ -z "$CFG_BAD" ] && ok "CI templates: every stack runs the checks from .slickrails/config.sh" || fail "CI templates: every stack runs the checks from .slickrails/config.sh (missing:$CFG_BAD)"
+
 # ---- Node CI template: the package manager's downloads are cached, keyed by the lockfile ------------------------
 # (every other stack template cached already; a cold install on every PR run is the classic slow CI)
 NODE_CI="$KIT_DIR/templates/workflows/ci-node.yml"
-grep -q 'uses: actions/cache@v4' "$NODE_CI" && grep -q "hashFiles('package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb')" "$NODE_CI" \
+grep -q 'uses: actions/cache@' "$NODE_CI" && grep -q "hashFiles('package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb')" "$NODE_CI" \
   && grep -q '[~]/.npm' "$NODE_CI" && grep -q 'pnpm/store' "$NODE_CI" && grep -q 'bun/install/cache' "$NODE_CI" \
   && ok "ci-node.yml: caches npm/pnpm/yarn/bun downloads keyed by the lockfile" || fail "ci-node.yml: caches npm/pnpm/yarn/bun downloads keyed by the lockfile"
 

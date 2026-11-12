@@ -1,5 +1,6 @@
 # slickrails: security scan (rules 4 + 7)
-# Secrets scan over the history + dependency audit per stack.
+# Secrets scan over the history + dependency audit per stack (npm, pnpm, pip, Go, Rust, Ruby — each only if its
+# lockfile is there). No audit step for yarn, bun and JVM projects: add your own to this job.
 name: Security
 
 on:
@@ -17,7 +18,7 @@ jobs:
       contents: read
       pull-requests: read   # gitleaks-action lists the PR's commits; without it every PR fails with 403
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v3
@@ -26,9 +27,9 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20   # cargo-audit is built from source
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: npm audit (if Node project)
         if: hashFiles('package-lock.json') != ''
@@ -39,3 +40,27 @@ jobs:
         run: |
           python -m pip install pip-audit
           if [ -f requirements.txt ]; then pip-audit -r requirements.txt; else pip-audit .; fi
+
+      - name: pnpm audit (if pnpm project)
+        if: hashFiles('pnpm-lock.yaml') != ''
+        run: npx --yes pnpm audit --audit-level high
+
+      # the runner's own Go may be older than the one go.mod asks for
+      - uses: actions/setup-go@v7
+        if: hashFiles('go.mod') != ''
+        with:
+          go-version: stable
+
+      - name: govulncheck (if Go project)
+        if: hashFiles('go.mod') != ''
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # built from source on every run (a few minutes): a cached binary would never be upgraded and one day fail to
+      # read a newer advisory database
+      - name: cargo audit (if Rust project)
+        if: hashFiles('Cargo.lock') != ''
+        run: cargo install cargo-audit --locked && cargo audit
+
+      - name: bundler-audit (if Ruby project)
+        if: hashFiles('Gemfile.lock') != ''
+        run: gem install --user-install bundler-audit && "$(ruby -e 'print Gem.user_dir')/bin/bundle-audit" check --update
