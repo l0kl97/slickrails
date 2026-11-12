@@ -1,6 +1,6 @@
 {
   "name": "slickrails",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Guardrails for AI-built codebases — hooks, CI, AI review, and feature dossiers in one command.",
   "bin": {
     "slickrails": "./cli.js"

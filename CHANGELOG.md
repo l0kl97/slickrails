@@ -5,6 +5,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-11-12
+
+From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
+itself, and from a look at what pr-agent does for its reviews.
+
+### Added
+- The Bash guard switches the git hooks on in a fresh clone (an agent's first tool call; only in its own repository,
+  never over another hook manager's path)
+- Update path: `.slickrails/manifest` records what the installer placed; `slickrails init` again replaces the files
+  nobody edited and keeps the edited ones (`.slickrails-new` next to them). `slickrails status` names an install from
+  another kit version
+- `security.yml` audits pnpm, Go (`govulncheck`), Rust (`cargo audit`) and Ruby (`bundler-audit`) too
+- The local review hands a failed review's findings to the next review of the branch, names the sensitive areas a
+  diff touches (CI workflows, migrations, auth, payments, infrastructure, the guardrails) and leaves lockfiles,
+  minified files and source maps out
+
+### Changed
+- Every stack's CI runs the checks from `.slickrails/config.sh`, the same commands as the hooks; an empty
+  `CHECK_TEST` is red. Lint, format and build steps stay in the template
+- All actions in the workflow templates are on their current major version; a test keeps them level with the kit's
+  own workflows
+- `pre-push` does not run typecheck and tests again for a state the Stop gate just saw green (and the other way round)
+- The local review diffs against the default branch after a rebase or an amend, and limits itself: only what the
+  diff introduces, no speculation without a code path, at most 6 findings
+- A diff over `REVIEW_MAX_KB` (default 300) is cut at a file boundary; a PASS for the rest is reported as an ERROR,
+  not as a pass
+
+### Fixed
+- Deleting a remote branch ran the whole suite and the AI review
+- `slickrails protect` expected the pull-request-only `size` check on a branch's own commits and said so on every run
+- README, launch notes and roadmap described an older state (unpublished npm/Homebrew installs, branch protection
+  "never run on a real host")
+
 ## [1.5.0] — 2026-11-12
 
 From an outside review of 1.4.0, read from the view of a company where people without an engineering background

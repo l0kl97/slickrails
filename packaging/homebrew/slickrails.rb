@@ -8,7 +8,7 @@
 class Slickrails < Formula
   desc "Guardrails for AI-built codebases — hooks, CI, AI review, feature dossiers"
   homepage "https://github.com/l0kl97/slickrails"
-  url "https://github.com/l0kl97/slickrails/archive/refs/tags/v1.5.0.tar.gz"
+  url "https://github.com/l0kl97/slickrails/archive/refs/tags/v1.6.0.tar.gz"
   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
   license "MIT"
 
