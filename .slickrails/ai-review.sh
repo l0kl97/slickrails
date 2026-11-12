@@ -7,6 +7,7 @@
 # Degrades gracefully, but never silently and never as a PASS: no reviewer CLI, no base to diff against
 # or an empty diff skip with a message; a failed reviewer or an invalid answer is reported as ERROR.
 # REVIEW_ON_ERROR (config.sh): "warn" (default) lets the push proceed unreviewed, "block" stops it.
+# REVIEW_MAX_KB (config.sh, default 300): a larger diff is cut at a file boundary; a PASS for the rest is an ERROR.
 # REVIEW_TIMEOUT (config.sh, seconds, default 120): a hanging reviewer is killed and reported as ERROR.
 # Exit codes: 0 = PASS (or nothing to review) · 1 = FAIL verdict, or ERROR with block · 3 = ERROR with warn
 # (not reviewed — the caller may let the push proceed but must not report a full pass).
@@ -41,9 +42,15 @@ fi
 
 DIFF_ERR=""
 # a diff git cannot build (no merge base: unrelated history, a shallow clone) is not an empty diff
-DIFF="$(git diff "$BASE"...HEAD 2>/dev/null)" || { DIFF=""; DIFF_ERR="git cannot diff against $BASE (no merge base? a shallow clone?)"; }
+# Lockfiles, minified files and source maps are left out: nobody wrote them by hand, and they drown what someone did.
+DIFF="$(git diff "$BASE"...HEAD -- . \
+  ':(exclude,glob)**/package-lock.json' ':(exclude,glob)**/pnpm-lock.yaml' ':(exclude,glob)**/yarn.lock' \
+  ':(exclude,glob)**/bun.lock' ':(exclude,glob)**/bun.lockb' ':(exclude,glob)**/Cargo.lock' ':(exclude,glob)**/go.sum' \
+  ':(exclude,glob)**/Gemfile.lock' ':(exclude,glob)**/poetry.lock' ':(exclude,glob)**/uv.lock' ':(exclude,glob)**/composer.lock' \
+  ':(exclude,glob)**/*.min.js' ':(exclude,glob)**/*.min.css' ':(exclude,glob)**/*.map' 2>/dev/null)" \
+  || { DIFF=""; DIFF_ERR="git cannot diff against $BASE (no merge base? a shallow clone?)"; }
 if [ -z "$DIFF" ] && [ -z "$DIFF_ERR" ]; then
-  say "nothing to review against $BASE."
+  say "nothing to review against $BASE (lockfiles, minified files and source maps are not reviewed)."
   exit 0
 fi
 
@@ -75,7 +82,7 @@ esac
 
 # not_reviewed <reason>: never a pass; REVIEW_ON_ERROR decides whether the push may proceed
 not_reviewed() {
-  say "ERROR — $1. This is NOT a pass: the diff was not reviewed."
+  say "ERROR — $1. This is NOT a pass."
   case "$(printf '%s' "$ON_ERROR" | tr '[:upper:]' '[:lower:]')" in
     warn) ;;
     block) ON_ERROR="block";;
@@ -90,17 +97,34 @@ not_reviewed() {
 }
 [ -n "$DIFF_ERR" ] && not_reviewed "$DIFF_ERR"
 
-PROMPT="You are a strict pre-push reviewer of AI-generated code. Review ONLY the diff below for: correctness (logic, edge cases), security (input validation, injection, secrets, insecure defaults), reliability (error handling, timeouts, races), tests that only cover the happy path, operational gaps (missing timeout/logging on external calls), and performance (excessive/repeated I/O, N+1 queries — AI code shows ~8x more excessive I/O). Review profile '$PROFILE': quiet = only high-risk findings block; chill = real findings block; assertive = same as chill, plus non-blocking improvement notes after the verdict block. Only real, blocking findings justify FAIL; style nitpicks never do."
+PROMPT="You are a strict pre-push reviewer of AI-generated code. Review ONLY the diff below for: correctness (logic, edge cases), security (input validation, injection, secrets, insecure defaults), reliability (error handling, timeouts, races), tests that only cover the happy path, operational gaps (missing timeout/logging on external calls), and performance (excessive/repeated I/O, N+1 queries — AI code shows ~8x more excessive I/O). Review profile '$PROFILE': quiet = only high-risk findings block; chill = real findings block; assertive = same as chill, plus non-blocking improvement notes after the verdict block. Only real, blocking findings justify FAIL; style nitpicks never do. Report only what this diff introduces (its added and changed lines). Do not speculate that a change might break other code unless you can name the affected code path. Do not flag a design choice or a matter of style unless it causes a clear defect. State severity accurately, do not overstate impact. At most 6 findings, the most serious first; none is a valid answer."
 TEXT_FORMAT="Your FIRST line must be exactly 'VERDICT: PASS' or 'VERDICT: FAIL'. If FAIL, list each finding as 'file:line — [high|medium|low] — issue — concrete failure scenario'."
 JSON_FORMAT="Answer through the required JSON schema: verdict PASS or FAIL, and findings: one string per finding, formatted 'file:line — [high|medium|low] — issue — concrete failure scenario' (none if PASS)."
 SCHEMA='{"type":"object","properties":{"verdict":{"enum":["PASS","FAIL"]},"findings":{"type":"array","items":{"type":"string"}}},"required":["verdict","findings"]}'
+
+# A diff over REVIEW_MAX_KB (config.sh, default 300) is cut at a file boundary. The reviewer gets the names of the
+# files that were left out (it can read them), and a PASS for the rest is reported as what it is: not a full review.
+MAX_KB="${REVIEW_MAX_KB:-300}"; case "$MAX_KB" in ""|*[!0-9]*) MAX_KB=300;; esac
+OMITTED="$(printf '%s\n' "$DIFF" | awk -v max=$((MAX_KB * 1024)) '
+  /^diff --git / { if (n > max) cut = 1; if (cut) { sub(/^diff --git a\//, ""); sub(/ b\/.*/, ""); print } }
+  !cut { n += length($0) + 1 }')"
+[ -n "$OMITTED" ] && DIFF="$(printf '%s\n' "$DIFF" | awk -v max=$((MAX_KB * 1024)) '/^diff --git / && n > max { exit } { print; n += length($0) + 1 }')"
+# Where a mistake costs most, named from the changed paths: the reviewer starts there.
+SENSITIVE="$(git diff --name-only "$BASE"...HEAD 2>/dev/null | awk '
+  /(^|\/)\.github\/workflows\// { a["CI workflows"] }
+  /(^|\/)(migrations?|db\/migrate)\// || /\.sql$/ { a["database migrations"] }
+  tolower($0) ~ /auth|permission|session|password|crypt/ { a["authentication and permissions"] }
+  tolower($0) ~ /payment|billing|invoice|checkout/ { a["payments"] }
+  /(^|\/)(Dockerfile|docker-compose[^\/]*|[^\/]*\.tf)$/ || /(^|\/)(infra|deploy|terraform|k8s|helm)\// { a["infrastructure"] }
+  /(^|\/)(\.slickrails|\.githooks)\// { a["the guardrails themselves"] }
+  END { for (k in a) printf "%s%s", (c++ ? ", " : ""), k }' || true)"
 
 # What the last review of this branch found, if it failed: a second look starts there, like a human reviewer's would.
 MEMO="$(git rev-parse --git-dir)/slickrails-last-review"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 PREVIOUS=""
 [ -f "$MEMO" ] && [ "$(sed -n 1p "$MEMO")" = "$BRANCH" ] && PREVIOUS="$(sed 1d "$MEMO")"
-INPUT="$(printf 'Project-specific review rules (take precedence):\n%s\n\nTeam review learnings (waived finding types are never reported; tightened ones always are):\n%s\n\nFindings of the previous review of this branch, if any (the author pushed again: check first whether each one is fixed):\n%s\n\n--- DIFF ---\n%s\n' "$RULES" "$LEARNINGS" "$PREVIOUS" "$DIFF")"
+INPUT="$(printf 'Project-specific review rules (take precedence):\n%s\n\nTeam review learnings (waived finding types are never reported; tightened ones always are):\n%s\n\nFindings of the previous review of this branch, if any (the author pushed again: check first whether each one is fixed, and report one that is still open in the same words):\n%s\n\nSensitive areas this diff touches, if any (look at them first and hardest):\n%s\n\nFiles changed but left out of the diff below because it is over the size limit, if any (read them yourself where a finding depends on them):\n%s\n\n--- DIFF ---\n%s\n' "$RULES" "$LEARNINGS" "$PREVIOUS" "$SENSITIVE" "$OMITTED" "$DIFF")"
 
 if [ "$CLI" = "codex" ]; then RUNNER="codex exec"; else RUNNER="claude -p"; fi
 say "reviewing outgoing diff against $BASE ($RUNNER, profile: $PROFILE, no daemon) ..."
@@ -186,6 +210,7 @@ fi
 case "$VERDICT" in
   PASS)
     rm -f "$MEMO"
+    [ -n "$OMITTED" ] && not_reviewed "the diff is over REVIEW_MAX_KB (${MAX_KB} KB): the part that was reviewed passed, these files were not reviewed: $(printf '%s' "$OMITTED" | tr '\n' ' ')"
     say "PASS — push proceeds."
     exit 0;;
   FAIL)
