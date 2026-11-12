@@ -1,6 +1,6 @@
 <p align="center">
   <a href="assets/slickrails-trailer.mp4"><img src="assets/slickrails-trailer.jpg" alt="slickrails-Trailer: dein AI-Agent sagt, er ist fertig, slickrails prüft" width="100%"></a>
-  <br><sub><a href="assets/slickrails-trailer.mp4">▶ Trailer ansehen (20 s, mit Ton)</a></sub>
+  <br><sub><a href="assets/slickrails-trailer.mp4">▶ Trailer ansehen (20 s)</a></sub>
 </p>
 
 # slickrails
@@ -85,10 +85,12 @@ dieselben Skripte.
 
 - **Stop-Gate.** Die Session endet nicht, solange die Checks rot sind.
   Es prüft auch committete, aber nicht gepushte Arbeit, läuft unter
-  einer eigenen Frist, wertet einen Absturz als rot, merkt sich grüne
-  Zustände und lässt eine Session nach drei Blocks am unveränderten
-  Zustand gehen, laut.
-- **Bash-Guard.** Blockiert `--no-verify`, `git commit -n`,
+  einer eigenen Frist, wertet einen Absturz als rot und lässt eine
+  Session nach drei Blocks am unveränderten Zustand gehen, laut. Einen
+  Stand, den es grün gesehen hat, prüft weder das Gate noch `pre-push`
+  ein zweites Mal.
+- **Bash-Guard.** Schaltet in einem frischen Clone die Git-Hooks ein
+  (git klont diese Einstellung nie). Blockiert `--no-verify`, `git commit -n`,
   `SLICKRAILS_SKIP=` und das Abschalten der Hooks über `core.hooksPath`
   in den Shell-Befehlen eines Agenten. Der Ausweg gehört dem Menschen
   (`SLICKRAILS_ALLOW_BYPASS=1` in der Hook-Umgebung).
@@ -132,7 +134,9 @@ ohne Daemon, TUI und Agent-Pipeline. Geschützt sind nur Pushes über
 | `.slickrails/session-check.sh` | Stop-Hook-Script: Session endet erst mit grünen Checks |
 | `.slickrails/bash-guard.sh` | PreToolUse-Guard: blockiert `--no-verify`/`SLICKRAILS_SKIP=`, Schreibzugriffe auf die Guardrail-Dateien und destruktive Befehle (`git reset --hard`, Force-Push, `rm -rf ~`, DB-Reset) |
 | `.slickrails/dep-check.sh` | Paket-Check des Guards: blockiert ein Paket, das jünger als 30 Tage ist und kaum genutzt wird; ein Name, den es auf npm/PyPI nicht gibt, wird nur gemeldet (Slopsquatting) |
-| `.slickrails/ai-review.sh` | Lokales AI-Review vor jedem Push mit deinem `claude`- oder `codex`-CLI (ohne API-Key, ohne Daemon; der Installer schaltet es ein, wenn er eins findet) |
+| `.slickrails/ai-review.sh` | Lokales AI-Review vor jedem Push mit deinem `claude`- oder `codex`-CLI (ohne API-Key, ohne Daemon; der Installer schaltet es ein, wenn er eins findet). Prüft, was der Push hinzufügt, lässt Lockfiles weg, beginnt bei den Befunden der letzten Runde und meldet einen zu großen, abgeschnittenen Diff nie als bestanden |
+| `.slickrails/setup-check.sh` | Läuft in der CI: rot, wenn Hooks, Checks oder Agent-Hooks fehlen oder leer sind |
+| `.slickrails/manifest` | Was der Installer abgelegt hat; damit ersetzt ein erneutes `slickrails init` unveränderte Dateien |
 | `.claude/settings.json` | Claude-Code-Stop-Hook und Bash-Guard (Durchsetzung, nicht nur Anweisung) |
 | `.codex/hooks.json` | dasselbe für das Codex-CLI; neue Projekt-Hooks müssen in Codex einmal freigegeben werden (`/hooks`) |
 | `.githooks/pre-commit` | Secrets-Scan, .env-Block, optional Lint |
@@ -141,9 +145,10 @@ ohne Daemon, TUI und Agent-Pipeline. Geschützt sind nur Pushes über
 | `.githooks/post-merge` | Erinnert nach dem Merge an Dossier und Changelog |
 | `docs/features/` | Feature-Dossiers: Auftrag, Entscheidungen, Testweg, Bugfix-Historie |
 | `.github/PULL_REQUEST_TEMPLATE.md` | PR-Template: Warum / Was / Wie getestet / Risiken |
-| `.github/workflows/ci.yml` | Lint/Typecheck/Test/Build für den erkannten Stack |
+| `.github/workflows/ci.yml` | Setup-Check, dieselben Checks wie die Hooks (`.slickrails/config.sh`), dazu Lint und Build für den erkannten Stack |
 | `.github/workflows/smoke.yml` | Playwright-Browser-Smoke-Tests (wenn Playwright da ist) |
-| `.github/workflows/security.yml` | gitleaks + npm audit/pip-audit |
+| `.github/workflows/security.yml` | gitleaks + Audit des Stacks (npm, pnpm, pip, Go, Rust, Ruby) |
+| `.github/CODEOWNERS` | Vorlage für sensible Pfade, auskommentiert; greift mit `CODEOWNER_REVIEWS=1 slickrails protect` |
 | `.github/workflows/claude-review.yml` | Optional (`slickrails github-review`): dasselbe AI-Review serverseitig auf jedem PR (braucht die Claude-GitHub-App und `CLAUDE_CODE_OAUTH_TOKEN` oder `ANTHROPIC_API_KEY`) |
 | `.github/workflows/pr-size.yml` | PR-Größen-Wache: mehr als ~800 Zeilen blocken (Label `size-ok` als Ausnahme) |
 | `.github/dependabot.yml` | Wöchentliche Dependency-Updates |
@@ -212,5 +217,7 @@ später der Kern des lokalen Gates dazu.
 ## Update-Strategie
 
 Der Kit ist die eine Quelle. Änderungen am Standard hier machen, dann
-`slickrails init` (bzw. `install.sh`) in den Projekten erneut ausführen.
-Abweichungen tauchen als `*.slickrails-new` auf und werden bewusst gemergt.
+`slickrails upgrade` und in den Projekten `slickrails init` erneut
+ausführen. Dateien, die niemand bearbeitet hat, werden ersetzt;
+bearbeitete bekommen eine `*.slickrails-new` daneben und werden bewusst
+gemergt.
