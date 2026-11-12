@@ -27,8 +27,10 @@ cd "$REPO_ROOT" || exit 1
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 # Untracked files count too (not ignored ones): a new test file nobody added makes local tests green and CI red.
 DIRTY="$(git status --porcelain 2>/dev/null || true)"
+REFS=0; DELETES=0
 while read -r LREF LSHA _ _; do
-  case "$LSHA" in ""|*[!0]*) ;; *) continue;; esac           # all zeros = branch deletion, nothing to check
+  REFS=$((REFS + 1))
+  case "$LSHA" in ""|*[!0]*) ;; *) DELETES=$((DELETES + 1)); continue;; esac   # all zeros = branch deletion, nothing to check
   PUSHED="$(git rev-parse --verify -q "$LSHA^{commit}" 2>/dev/null)" || continue   # not a commit (e.g. blob tag)
   if [ "$PUSHED" != "$HEAD_SHA" ]; then
     case "$LREF" in
@@ -47,6 +49,7 @@ while read -r LREF LSHA _ _; do
     exit 1
   fi
 done
+if [ "$REFS" -gt 0 ] && [ "$REFS" -eq "$DELETES" ]; then exit 0; fi   # only deletions: no code leaves the machine
 
 run_check() {
   LABEL="$1"; CMD="$2"
@@ -63,8 +66,22 @@ run_check() {
   fi
 }
 
-run_check "Typecheck" "${CHECK_TYPECHECK:-}"
-run_check "Tests"     "${CHECK_TEST:-}"
+# The Stop gate (session-check.sh) records the exact tree and commands it last saw green; a push of that very
+# state does not run them a second time, and a green push is recorded for the Stop gate in turn.
+GREEN_KEY=""
+if [ -z "$DIRTY" ] && [ -z "${CHECK_SESSION:-}" ]; then
+  CHECKS="${CHECK_TYPECHECK:-}"
+  [ -n "${CHECK_TEST:-}" ] && CHECKS="${CHECKS:+$CHECKS && }$CHECK_TEST"
+  GREEN_KEY="$(git rev-parse 'HEAD^{tree}' 2>/dev/null)-$(printf '%s' "$CHECKS" | git hash-object --stdin 2>/dev/null)"
+fi
+OK_FILE="$(git rev-parse --git-dir)/slickrails-last-ok"
+if [ -n "$GREEN_KEY" ] && [ "$(cat "$OK_FILE" 2>/dev/null)" = "$GREEN_KEY" ]; then
+  say "Typecheck and tests were already green for exactly this state — not run again."
+else
+  run_check "Typecheck" "${CHECK_TYPECHECK:-}"
+  run_check "Tests"     "${CHECK_TEST:-}"
+  [ -n "$GREEN_KEY" ] && printf '%s\n' "$GREEN_KEY" > "$OK_FILE"
+fi
 
 # Optional AI review of the outgoing diff (opt-in via config, needs claude CLI)
 if [ "${CHECK_PREPUSH_REVIEW:-0}" = "1" ] && [ -f .slickrails/ai-review.sh ]; then

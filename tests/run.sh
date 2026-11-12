@@ -528,6 +528,11 @@ git add package.json && git commit -qm "green test
 Why: fixture.
 What: passing test." >/dev/null 2>&1
 expect "pre-push: green tests pass" 0 git push -q origin "$BRANCH"
+# the same tree and commands were just green: a second push of that state does not run them again
+git commit -q --allow-empty -m "same tree"
+PP_OUT="$(git push -q origin "$BRANCH" 2>&1)"; PP_RC=$?
+case "$PP_OUT" in *"already green"*) [ "$PP_RC" -eq 0 ] && ok "pre-push: a state that was already green is not checked twice" || fail "pre-push: a state that was already green is not checked twice (exit $PP_RC)";;
+  *) fail "pre-push: a state that was already green is not checked twice ($(printf '%s' "$PP_OUT" | tail -1))";; esac
 
 # The checks must describe what leaves the machine: HEAD, with a clean working tree.
 git commit -q --allow-empty -m "pending push"   # an up-to-date push never reaches the hook
@@ -538,7 +543,8 @@ git checkout -q -- feature.js
 git branch -q side HEAD~1
 expect "pre-push: refuses a ref other than HEAD (checks ran on HEAD)" 1 git push -q origin side
 SLICKRAILS_SKIP=1 git push -q origin side >/dev/null 2>&1
-expect "pre-push: deleting a branch needs no checks" 0 git push -q origin :side
+PP_OUT="$(git push -q origin :side 2>&1)"; PP_RC=$?
+[ "$PP_RC" -eq 0 ] && [ -z "$PP_OUT" ] && ok "pre-push: deleting a branch runs no checks" || fail "pre-push: deleting a branch runs no checks (exit $PP_RC: $(printf '%s' "$PP_OUT" | head -2 | tr '\n' ' '))"
 
 git tag -a v0 -m "test tag"
 expect "pre-push: annotated tag on HEAD passes" 0 git push -q origin v0
@@ -580,6 +586,13 @@ review_case() {
 
 review_case "ai-review: exact PASS verdict passes" 0 "PASS — push proceeds" \
   'cat >/dev/null; echo "VERDICT: PASS"'
+# a failed review is remembered for the next one on this branch, and forgotten after a PASS
+review_case "ai-review: a FAIL is remembered" 1 "FAIL — findings" 'cat >/dev/null; printf "VERDICT: FAIL\nz.js:1 — [high] — remembered-finding — boom\n"'
+review_case "ai-review: the next review of the branch gets the previous findings" 0 "PASS — push proceeds" \
+  "cat > '$WORK/review.in'; echo 'VERDICT: PASS'"
+grep -q 'remembered-finding' "$WORK/review.in" 2>/dev/null && ok "ai-review: ...they are in the reviewer's input" || fail "ai-review: ...they are in the reviewer's input"
+review_case "ai-review: after a PASS nothing is carried over" 0 "PASS — push proceeds" "cat > '$WORK/review.in'; echo 'VERDICT: PASS'"
+grep -q 'remembered-finding' "$WORK/review.in" 2>/dev/null && fail "ai-review: ...the old findings are gone" || ok "ai-review: ...the old findings are gone"
 review_case "ai-review: the output carries no shell job-control noise (Terminated)" 0 "!Terminated" \
   'cat >/dev/null; echo "VERDICT: PASS"'
 review_case "ai-review: a finished review leaves no watcher process behind" 0 "PASS — push proceeds" \
@@ -1114,6 +1127,10 @@ case "$PR_OUT" in *"Note:"*) fail "protection: no note when every required check
 printf 'gitleaks\naudit\nsize\n' > "$WORK/gh.runs4"
 protect "$RB_ON" GH_RUNS="$WORK/gh.runs4"
 case "$PR_OUT" in *"no check named ci"*) ok "protection: a kit job missing from the branch's check runs is pointed out";; *) fail "protection: a kit job missing from the branch's check runs is pointed out";; esac
+# size only runs on pull requests: its absence from a branch's own check runs is no finding
+printf 'ci\ngitleaks\naudit\n' > "$WORK/gh.runs5"
+protect "$RB_ON" GH_RUNS="$WORK/gh.runs5"
+case "$PR_OUT" in *"Note:"*) fail "protection: no note about size missing on the branch (it only runs on pull requests)";; *) ok "protection: no note about size missing on the branch (it only runs on pull requests)";; esac
 # gh cannot list the check runs: said as a failure, not as "nothing ran yet"
 protect "$RB_ON" GH_RUNS="$WORK/does-not-exist"
 case "$PR_OUT" in *"listing the check runs on main failed"*) ok "protection: a failed check-run listing is said as such";; *) fail "protection: a failed check-run listing is said as such";; esac
@@ -2062,6 +2079,32 @@ echo b > b.txt; git add -A; git commit -qm b
 printf '#!/bin/sh\ncat >/dev/null\necho "VERDICT: PASS"\n' > "$WORK/gate-stub/claude"
 BASE_OUT="$(PATH="$WORK/gate-stub:$PATH" SLICKRAILS_REVIEW_BASE="$BASE_A" sh .slickrails/ai-review.sh 2>&1)"
 case "$BASE_OUT" in *"against $BASE_A"*) ok "ai-review: SLICKRAILS_REVIEW_BASE selects the base of the diff";; *) fail "ai-review: SLICKRAILS_REVIEW_BASE selects the base of the diff ($(printf '%s' "$BASE_OUT" | head -2 | tr '\n' ' '))";; esac
+
+# after a rebase the upstream is no ancestor of HEAD: the review takes the default branch as its base, so what main
+# gained in between is not reviewed a second time
+new_repo rebase-base-repo
+mkdir .slickrails; cp "$KIT_DIR/templates/ai-review.sh" .slickrails/
+git init -q --bare "$WORK/rebase-base.git"; git remote add origin "$WORK/rebase-base.git"
+echo a > a.txt; git add -A; git commit -qm a; git branch -M main; git push -q origin main 2>/dev/null
+git checkout -q -b feature; echo mine > mine.txt; git add -A; git commit -qm mine; git push -q -u origin feature 2>/dev/null
+git checkout -q main; echo from-main > main-only.txt; git add -A; git commit -qm "main moved"; git push -q origin main 2>/dev/null
+git checkout -q feature; git rebase -q main 2>/dev/null
+printf '#!/bin/sh\ncat > "%s/rebase.in"\necho "VERDICT: PASS"\n' "$WORK" > "$WORK/gate-stub/claude"
+RB_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"
+case "$RB_OUT" in *"against origin/main"*) ok "ai-review: after a rebase the base is the default branch, not the outdated upstream";; *) fail "ai-review: after a rebase the base is the default branch ($(printf '%s' "$RB_OUT" | head -1))";; esac
+grep -q 'mine.txt' "$WORK/rebase.in" 2>/dev/null && ! grep -q 'main-only.txt' "$WORK/rebase.in" \
+  && ok "ai-review: ...the diff holds the branch's change and not what main gained" || fail "ai-review: ...the diff holds the branch's change and not what main gained"
+
+# ...also where the default branch has another name (the remote's HEAD says which), and with no default branch at
+# all the outdated upstream is still reviewed against rather than nothing
+git branch -q -m main trunk; git push -q origin trunk 2>/dev/null; git push -q origin --delete main 2>/dev/null
+git remote set-head origin trunk 2>/dev/null; git fetch -q --prune origin 2>/dev/null
+RB_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"
+case "$RB_OUT" in *"against origin/trunk"*) ok "ai-review: a default branch with another name is found through the remote's HEAD";; *) fail "ai-review: a default branch with another name is found through the remote's HEAD ($(printf '%s' "$RB_OUT" | head -1))";; esac
+git remote set-head origin --delete 2>/dev/null; git branch -q -D trunk 2>/dev/null
+git update-ref -d refs/remotes/origin/main; git update-ref -d refs/remotes/origin/trunk
+RB_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"
+case "$RB_OUT" in *"against origin/feature"*) ok "ai-review: without any default branch the outdated upstream is the base (not no review)";; *) fail "ai-review: without any default branch the outdated upstream is the base ($(printf '%s' "$RB_OUT" | head -1))";; esac
 
 # gate remove
 gate_repo gate-remove
