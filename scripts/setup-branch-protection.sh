@@ -72,7 +72,9 @@ else
       MATRIX="$(printf '%s\n' "$RUNS" | grep -F "$J (" | grep "^$J (" || true)"
       if [ -n "$MATRIX" ]; then WANT_LIST="$WANT_LIST
 $MATRIX"; CHECK_NOTE="the kit's job names, matrix entries as GitHub reports them"; continue; fi
-      NOT_SEEN="$NOT_SEEN $J"   # ran, but neither as "$J" nor as "$J (...)": maybe skipped on that commit
+      # ran, but neither as "$J" nor as "$J (...)": maybe skipped on that commit (size only runs on pull requests,
+      # so a branch's own commits never carry it)
+      [ "$J" = size ] || NOT_SEEN="$NOT_SEEN $J"
     fi
     WANT_LIST="$WANT_LIST
 $J"

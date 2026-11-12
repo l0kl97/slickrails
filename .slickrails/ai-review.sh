@@ -18,12 +18,17 @@ say() { printf '%s\n' "slickrails[ai-review]: $*" >&2; }
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$REPO_ROOT" || exit 0
 
-# Base: the branch's upstream, else main/master, else nothing to compare.
-BASE="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+# Base: the branch's upstream, else the default branch (the remote's HEAD, main, master), else nothing to compare.
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+BASE="$UPSTREAM"
+# After a rebase or an amend the upstream is no ancestor of HEAD: a diff against it would also hold everything
+# the base branch gained in between, which was reviewed when it went in. Then the default branch is the base.
+if [ -n "$BASE" ] && ! git merge-base --is-ancestor "$BASE" HEAD 2>/dev/null; then BASE=""; fi
 if [ -z "$BASE" ]; then
-  for CAND in origin/main origin/master main master; do
-    if git rev-parse --verify -q "$CAND" >/dev/null 2>&1; then BASE="$CAND"; break; fi
+  for CAND in "$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null || true)" origin/main origin/master main master; do
+    if [ -n "$CAND" ] && git rev-parse --verify -q "$CAND^{commit}" >/dev/null 2>&1; then BASE="$CAND"; break; fi
   done
+  [ -z "$BASE" ] && BASE="$UPSTREAM"   # no default branch to be found: the outdated upstream is better than no review
 fi
 # A caller that knows the base better (the slickrails gate) passes it in.
 if [ -n "${SLICKRAILS_REVIEW_BASE:-}" ] && git rev-parse --verify -q "${SLICKRAILS_REVIEW_BASE}^{commit}" >/dev/null 2>&1; then
@@ -90,7 +95,12 @@ TEXT_FORMAT="Your FIRST line must be exactly 'VERDICT: PASS' or 'VERDICT: FAIL'.
 JSON_FORMAT="Answer through the required JSON schema: verdict PASS or FAIL, and findings: one string per finding, formatted 'file:line — [high|medium|low] — issue — concrete failure scenario' (none if PASS)."
 SCHEMA='{"type":"object","properties":{"verdict":{"enum":["PASS","FAIL"]},"findings":{"type":"array","items":{"type":"string"}}},"required":["verdict","findings"]}'
 
-INPUT="$(printf 'Project-specific review rules (take precedence):\n%s\n\nTeam review learnings (waived finding types are never reported; tightened ones always are):\n%s\n\n--- DIFF ---\n%s\n' "$RULES" "$LEARNINGS" "$DIFF")"
+# What the last review of this branch found, if it failed: a second look starts there, like a human reviewer's would.
+MEMO="$(git rev-parse --git-dir)/slickrails-last-review"
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+PREVIOUS=""
+[ -f "$MEMO" ] && [ "$(sed -n 1p "$MEMO")" = "$BRANCH" ] && PREVIOUS="$(sed 1d "$MEMO")"
+INPUT="$(printf 'Project-specific review rules (take precedence):\n%s\n\nTeam review learnings (waived finding types are never reported; tightened ones always are):\n%s\n\nFindings of the previous review of this branch, if any (the author pushed again: check first whether each one is fixed):\n%s\n\n--- DIFF ---\n%s\n' "$RULES" "$LEARNINGS" "$PREVIOUS" "$DIFF")"
 
 if [ "$CLI" = "codex" ]; then RUNNER="codex exec"; else RUNNER="claude -p"; fi
 say "reviewing outgoing diff against $BASE ($RUNNER, profile: $PROFILE, no daemon) ..."
@@ -175,11 +185,13 @@ fi
 
 case "$VERDICT" in
   PASS)
+    rm -f "$MEMO"
     say "PASS — push proceeds."
     exit 0;;
   FAIL)
     say "FAIL — findings:"
     printf '%s\n' "${FINDINGS:-(the reviewer gave no details)}" >&2
+    printf '%s\n%s\n' "$BRANCH" "$FINDINGS" > "$MEMO"
     say "Fix the findings (or push deliberately with SLICKRAILS_SKIP=1 and say why in the commit)."
     exit 1;;
   *)

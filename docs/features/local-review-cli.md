@@ -46,3 +46,9 @@ The PR review on GitHub failed: it needs the Claude GitHub App and a secret (API
 - 2026-10-29: symptom: the first real review of a PR-sized diff ended as ERROR "reviewer process failed (exit 1)" with no reason → cause: claude needed 4 turns for the structured answer, `--max-turns` was 3, and it reports `error_max_turns` on stdout → fix: `--max-turns 8`, the subtype goes into the ERROR line (tests red first).
 - 2026-10-30: the local review is the default review: the installer no longer adds `claude-review.yml` (opt-in: `--github-review`, or later `slickrails github-review`), rule 6 reads "AI review before merge" and is ☑ when the local review runs. Asked by the maintainer: "the local review is the standard, and whoever wants can set it up on GitHub to run server-side".
 - 2026-11-02: symptom: a real local review left a new file staged in the repo (it "reproduced" a finding by writing and `git add`-ing it; another finding said it had run `git restore .`) → cause: `claude -p` ran with every tool; only codex had a read-only sandbox → fix: claude reviews with `--tools Read,Grep,Glob` (test red first; a real run still blocks a seeded injection).
+- 2026-11-12 (1.6.0): after a rebase the review covered what main had gained in between (the diff base was the
+  branch's outdated upstream; a docs PR got findings about a bootstrap change that was already merged) → when the
+  upstream is no ancestor of HEAD the base is the default branch. And every push was reviewed from scratch, with new
+  findings each round (four rounds on one script) → a FAIL's findings are kept in `.git/slickrails-last-review` and
+  handed to the next review of that branch ("check first whether each one is fixed"); a PASS clears them. Not
+  measured: whether this shortens the rounds; the benchmark has no multi-round case.
