@@ -2148,6 +2148,29 @@ git update-ref -d refs/remotes/origin/main; git update-ref -d refs/remotes/origi
 RB_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"
 case "$RB_OUT" in *"against origin/feature"*) ok "ai-review: without any default branch the outdated upstream is the base (not no review)";; *) fail "ai-review: without any default branch the outdated upstream is the base ($(printf '%s' "$RB_OUT" | head -1))";; esac
 
+# what the reviewer is given: no lockfiles, the sensitive areas named, and an honest verdict when the diff was cut
+new_repo review-scope-repo
+mkdir .slickrails; cp "$KIT_DIR/templates/ai-review.sh" .slickrails/
+echo a > a.txt; git add -A; git commit -qm a; git branch -M main; git checkout -q -b feature
+mkdir -p src db/migrations
+printf '{"lockfileVersion":3}\n' > package-lock.json; echo 'x=1' > src/app.js; echo 'ALTER TABLE t ADD c int;' > db/migrations/001.sql
+git add -A; git commit -qm change
+printf '#!/bin/sh\ncat > "%s/scope.in"\necho "VERDICT: PASS"\n' "$WORK" > "$WORK/gate-stub/claude"
+SC_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"; SC_RC=$?
+[ "$SC_RC" -eq 0 ] && grep -q 'src/app.js' "$WORK/scope.in" && ! grep -q 'lockfileVersion' "$WORK/scope.in" \
+  && ok "ai-review: lockfiles are left out of the reviewed diff" || fail "ai-review: lockfiles are left out of the reviewed diff (exit $SC_RC)"
+grep -q 'database migrations' "$WORK/scope.in" && ok "ai-review: the sensitive areas a diff touches are named to the reviewer" || fail "ai-review: the sensitive areas a diff touches are named to the reviewer"
+SC_OUT="$(PATH="$WORK/gate-stub:$PATH" REVIEW_MAX_KB=0 sh .slickrails/ai-review.sh 2>&1)"; SC_RC=$?
+[ "$SC_RC" -eq 3 ] && case "$SC_OUT" in *"NOT a pass"*) true;; *) false;; esac && case "$SC_OUT" in *"src/app.js"*) true;; *) false;; esac \
+  && ok "ai-review: a PASS for a diff that was cut is not a pass, and names the files that were not reviewed" \
+  || fail "ai-review: a PASS for a diff that was cut is not a pass (exit $SC_RC: $(printf '%s' "$SC_OUT" | tail -2 | tr '\n' ' '))"
+grep -q 'db/migrations/001.sql' "$WORK/scope.in" && ! grep -q 'x=1' "$WORK/scope.in" \
+  && ok "ai-review: ...the reviewer gets the reviewed files' diff and the names of the rest" || fail "ai-review: ...the reviewer gets the reviewed files' diff and the names of the rest"
+git checkout -q main; git checkout -q -b locks-only; printf '{"lockfileVersion":4}\n' > package-lock.json; git add -A; git commit -qm lock
+SC_OUT="$(PATH="$WORK/gate-stub:$PATH" sh .slickrails/ai-review.sh 2>&1)"; SC_RC=$?
+[ "$SC_RC" -eq 0 ] && case "$SC_OUT" in *"nothing to review"*) true;; *) false;; esac \
+  && ok "ai-review: a change of lockfiles only needs no review" || fail "ai-review: a change of lockfiles only needs no review (exit $SC_RC)"
+
 # gate remove
 gate_repo gate-remove
 sh "$GATE_SH" remove >/dev/null 2>&1
