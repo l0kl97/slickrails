@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: slickrails setup
         # fails when the guardrails (git hooks, checks in config.sh, agent session hooks) are missing or empty;
@@ -24,7 +24,7 @@ jobs:
           SLICKRAILS_SETUP_CHECK: ${{ vars.SLICKRAILS_SETUP_CHECK }}
         run: sh .slickrails/setup-check.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -40,11 +40,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Tests (pytest)
+      - name: Checks (.slickrails/config.sh — the same commands the local hooks run)
         run: |
-          if ls tests/ test_*.py */test_*.py >/dev/null 2>&1 || [ -d tests ]; then
-            pytest -q
-          else
-            echo "No tests found — rule 10: record this as a gap in .slickrails/STATUS.md."
+          . ./.slickrails/config.sh
+          if [ -n "${CHECK_TYPECHECK:-}" ]; then sh -c "$CHECK_TYPECHECK"; else echo "skip: CHECK_TYPECHECK is empty"; fi
+          if [ -z "${CHECK_TEST:-}" ]; then
+            echo "CHECK_TEST in .slickrails/config.sh is empty: no tests run, here or in the local hooks. Set it (rule 3)."
             exit 1
           fi
+          sh -c "$CHECK_TEST"

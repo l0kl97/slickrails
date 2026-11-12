@@ -56,8 +56,8 @@ Maintainability. Projekt-eigene Schwerpunkte stehen in
 `.slickrails/rules.md` und fließen ins Review ein.
 
 ### 7. Dependencies unter Kontrolle
-Dependabot ist aktiviert, und der Security-Workflow fährt `npm audit` /
-`pip-audit` (je nach Stack) auf jedem PR. Bekannte CVEs blockieren den Merge.
+Dependabot ist aktiviert, und der Security-Workflow fährt den Audit des Stacks
+(npm, pnpm, pip, Go, Rust, Ruby) auf jedem PR. Bekannte CVEs blockieren den Merge.
 
 ### 8. Definition of Done
 Ein Feature ist fertig, wenn: Code + Tests + Doku-Update vorhanden sind

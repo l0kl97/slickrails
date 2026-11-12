@@ -1,6 +1,6 @@
 # slickrails: CI for Swift projects (SwiftPM)
 # For Xcode app projects (e.g. iOS/macOS apps without Package.swift),
-# replace the test step with xcodebuild and the matching scheme.
+# set CHECK_TEST in .slickrails/config.sh to xcodebuild with the matching scheme.
 name: CI
 
 on:
@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: slickrails setup
         # fails when the guardrails (git hooks, checks in config.sh, agent session hooks) are missing or empty;
@@ -26,12 +26,12 @@ jobs:
           SLICKRAILS_SETUP_CHECK: ${{ vars.SLICKRAILS_SETUP_CHECK }}
         run: sh .slickrails/setup-check.sh
 
-      - name: Build & Test (SwiftPM)
+      - name: Checks (.slickrails/config.sh — the same commands the local hooks run)
         run: |
-          if [ -f Package.swift ]; then
-            swift build
-            swift test
-          else
-            echo "No Package.swift — put your xcodebuild scheme here (see comment above)."
+          . ./.slickrails/config.sh
+          if [ -n "${CHECK_TYPECHECK:-}" ]; then sh -c "$CHECK_TYPECHECK"; else echo "skip: CHECK_TYPECHECK is empty"; fi
+          if [ -z "${CHECK_TEST:-}" ]; then
+            echo "CHECK_TEST in .slickrails/config.sh is empty: no tests run, here or in the local hooks. Set it (rule 3)."
             exit 1
           fi
+          sh -c "$CHECK_TEST"

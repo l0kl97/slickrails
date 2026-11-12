@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: slickrails setup
         # fails when the guardrails (git hooks, checks in config.sh, agent session hooks) are missing or empty;
@@ -28,11 +28,12 @@ jobs:
         with:
           bundler-cache: true
 
-      - name: Tests
+      - name: Checks (.slickrails/config.sh — the same commands the local hooks run)
         run: |
-          if [ -d spec ]; then bundle exec rspec
-          elif [ -d test ]; then bundle exec rake test
-          else
-            echo "No tests found — rule 10: record this as a gap in .slickrails/STATUS.md."
+          . ./.slickrails/config.sh
+          if [ -n "${CHECK_TYPECHECK:-}" ]; then sh -c "$CHECK_TYPECHECK"; else echo "skip: CHECK_TYPECHECK is empty"; fi
+          if [ -z "${CHECK_TEST:-}" ]; then
+            echo "CHECK_TEST in .slickrails/config.sh is empty: no tests run, here or in the local hooks. Set it (rule 3)."
             exit 1
           fi
+          sh -c "$CHECK_TEST"
