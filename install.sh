@@ -248,7 +248,8 @@ while [ $# -gt 0 ]; do
         # Self-test: installed is not the same as working. The guard and the pre-commit hook get a probe each (the
         # pre-commit one in a scratch repo, so neither this repo nor its config.sh is touched).
         if [ -x "$DOC_ROOT/.slickrails/bash-guard.sh" ]; then
-          probe_guard() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" | sh "$DOC_ROOT/.slickrails/bash-guard.sh" >/dev/null 2>&1; }
+          # (from outside the repo: the guard switches inactive git hooks on, a check must not change what it checks)
+          probe_guard() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" | ( cd "${TMPDIR:-/tmp}" && sh "$DOC_ROOT/.slickrails/bash-guard.sh" ) >/dev/null 2>&1; }
           DOC_P1=0; probe_guard 'git commit --no-verify -m probe' || DOC_P1=$?
           DOC_P2=0; probe_guard 'git status' || DOC_P2=$?
           if [ "$DOC_P1" != "2" ]; then say "  PROBLEM  Bash guard lets a --no-verify probe through (exit $DOC_P1)"; PROBLEMS=1
@@ -349,20 +350,29 @@ if [ -f package.json ] && grep -q '"@playwright/test"' package.json 2>/dev/null;
   HAS_PLAYWRIGHT=1
 fi
 
-# Copies only if the destination doesn't exist; otherwise .slickrails-new next to it. New files are counted and only
-# listed with --verbose; a divergent file is always said.
+# Copies only if the destination doesn't exist. A file that differs is replaced when it is still what an earlier
+# install placed from the same template (.slickrails/manifest holds hash, path and template: that is the update
+# path), and gets a .slickrails-new next to it when someone edited it or the template is another one (--lang, stack). New files are counted and only listed with --verbose; the rest is always said.
 ADDED=0
+MANIFEST=".slickrails/manifest"; PLACED=""
 added() { ADDED=$((ADDED + 1)); [ "$VERBOSE" = "1" ] && say "  + $1"; return 0; }
 place() { # place <src> <dest>
   SRC="$1"; DEST="$2"
   mkdir -p "$(dirname "$DEST")"
-  if [ -f "$DEST" ]; then
-    if cmp -s "$SRC" "$DEST"; then return 0; fi
-    cp "$SRC" "$DEST.slickrails-new"
-    warn "$DEST exists — the new version was placed at $DEST.slickrails-new."
-  else
+  FROM="${SRC#"$KIT_DIR"/}"   # which template: another language or stack is another file, not an update
+  PLACED="$PLACED$(git hash-object "$SRC") $DEST $FROM
+"
+  if [ ! -f "$DEST" ]; then
     cp "$SRC" "$DEST"
     added "$DEST"
+  elif cmp -s "$SRC" "$DEST"; then
+    :
+  elif [ "$(awk -v d="$DEST" -v f="$FROM" '$2 == d && $3 == f { print $1 }' "$MANIFEST" 2>/dev/null)" = "$(git hash-object "$DEST")" ]; then
+    cat "$SRC" > "$DEST"   # write through: keeps the file mode
+    say "  ~ $DEST updated (it was unchanged since the last install)"
+  else
+    cp "$SRC" "$DEST.slickrails-new"
+    warn "$DEST exists and was edited — the new version was placed at $DEST.slickrails-new."
   fi
   return 0
 }
@@ -510,7 +520,6 @@ else
   warn "core.hooksPath is '$CUR_HOOKS_PATH' (another hook manager?) — the slickrails git hooks are NOT active."
   warn "The hook files are in .githooks/. Either call them from your hook manager (e.g. 'sh .githooks/pre-commit' inside $CUR_HOOKS_PATH/pre-commit, same for pre-push and commit-msg), or switch with 'git config core.hooksPath .githooks' (that disables the other hooks)."
 fi
-
 # ------------------------------------------------------------- workflows ----
 case "$STACK" in
   node)   place "$KIT_DIR/templates/workflows/ci-node.yml"   ".github/workflows/ci.yml";;
@@ -624,6 +633,10 @@ for AGENT_FILE in CLAUDE.md AGENTS.md; do
   fi
 done
 
+# what was placed, for the next run: a file that still has this hash then was not edited and can be updated
+{ printf '# slickrails %s — what the installer placed: hash, file, template. Commit it; do not edit.\n' "$(cat "$KIT_DIR/VERSION" 2>/dev/null)"
+  printf '%s' "$PLACED"; } > "$MANIFEST"
+
 say ""
 say "Done: $ADDED files added (list them: git status; or run with --verbose)."
 # Next steps: only the ones that apply to this repo
@@ -648,4 +661,5 @@ fi
 [ "$STATUS_MOD" = "1" ] || step "Optional: slickrails in Claude Code's status line (guard, review, checks, open rules):" \
      "/plugin marketplace add $SLICKRAILS_MARKETPLACE  then  /plugin install slickrails-status@slickrails   (for the whole team: --status-mod)"
 step "Claude Code / Codex ask once to trust the project hooks (Codex: /hooks); until then they are skipped."
-step "Every other clone: git config core.hooksPath .githooks   (git does not copy it); 'slickrails status' shows where the repo stands."
+step "Fresh clones: git does not copy core.hooksPath. An agent's first tool call switches the hooks on;" \
+     "by hand: git config core.hooksPath .githooks. Update this repo to a newer kit: slickrails upgrade, then slickrails init."

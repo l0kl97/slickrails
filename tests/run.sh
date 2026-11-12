@@ -173,6 +173,47 @@ case "$SE_OUT" in *"checks nothing"*"setup"*"CI fails"*) ok "installer: a projec
 sc 1 "a fresh install without a detectable check fails (the installer said so)" X=1
 case "$(sh "$KIT_DIR/install.sh" doctor 2>&1)" in *"no checks configured"*"setup check in CI fails"*) ok "doctor: an empty config.sh names the CI consequence too";; *) fail "doctor: an empty config.sh names the CI consequence too";; esac
 
+# Update path: a file that is still what an earlier install placed is replaced by the kit's version; an edited one is not
+grep -q '^# slickrails ' .slickrails/manifest && grep -q ' .githooks/pre-push templates/hooks/pre-push$' .slickrails/manifest \
+  && ok "installer: writes .slickrails/manifest (what it placed)" || fail "installer: writes .slickrails/manifest (what it placed)"
+printf '#!/bin/sh\n# an older kit version\n' > .githooks/pre-push
+OLD_HASH="$(git hash-object .githooks/pre-push)"
+awk -v h="$OLD_HASH" '$2 == ".githooks/pre-push" { print h, $2, $3; next } { print }' .slickrails/manifest > "$WORK/manifest.tmp" && cat "$WORK/manifest.tmp" > .slickrails/manifest
+printf '\n# my own line\n' >> .githooks/commit-msg
+UP_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+case "$UP_OUT" in *".githooks/pre-push updated"*) true;; *) false;; esac \
+  && cmp -s .githooks/pre-push "$KIT_DIR/templates/hooks/pre-push" && [ -x .githooks/pre-push ] && [ ! -e .githooks/pre-push.slickrails-new ] \
+  && ok "installer: a file unchanged since the last install is updated in place (still executable)" || fail "installer: a file unchanged since the last install is updated in place"
+grep -q 'my own line' .githooks/commit-msg && [ -f .githooks/commit-msg.slickrails-new ] \
+  && ok "installer: an edited file is kept, the new version lands next to it" || fail "installer: an edited file is kept, the new version lands next to it"
+rm -f .githooks/commit-msg.slickrails-new; cp "$KIT_DIR/templates/hooks/commit-msg" .githooks/commit-msg
+# another template for the same file (here: the language) is not an update — the unedited German rulebook stays
+new_repo lang-keep-repo
+printf '{"name":"t"}' > package.json
+sh "$KIT_DIR/install.sh" --lang de >/dev/null 2>&1
+cp .slickrails/SLICKRAILS.md "$WORK/rulebook.de"
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+cmp -s .slickrails/SLICKRAILS.md "$WORK/rulebook.de" && [ -f .slickrails/SLICKRAILS.md.slickrails-new ] \
+  && ok "installer: a rerun in another language does not replace the unedited files of the first one" || fail "installer: a rerun in another language does not replace the unedited files of the first one"
+new_repo prep-repo
+printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+# an agent's first tool call in a fresh clone switches the hooks on; another hook manager's path is left alone
+git config --unset core.hooksPath
+AG_ERR="$(printf '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | sh .slickrails/bash-guard.sh 2>&1 >/dev/null)"
+[ "$(git config core.hooksPath)" = ".githooks" ] && case "$AG_ERR" in *"switched on"*) true;; *) false;; esac \
+  && ok "bash-guard: the first tool call in a fresh clone switches the git hooks on, and says so" || fail "bash-guard: the first tool call in a fresh clone switches the git hooks on, and says so"
+git config core.hooksPath .husky
+printf '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | sh .slickrails/bash-guard.sh >/dev/null 2>&1
+[ "$(git config core.hooksPath)" = ".husky" ] && ok "bash-guard: another hook manager's core.hooksPath is left alone" || fail "bash-guard: another hook manager's core.hooksPath is left alone"
+git config core.hooksPath .githooks
+# a foreign repository with a .githooks folder that the agent entered: its hooks are never switched on
+GUARD_OWN="$(pwd)/.slickrails/bash-guard.sh"
+new_repo foreign-hooks-repo
+mkdir .githooks; printf '#!/bin/sh\necho not-reviewed\n' > .githooks/pre-commit
+printf '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | sh "$GUARD_OWN" >/dev/null 2>&1
+[ -z "$(git config core.hooksPath)" ] && ok "bash-guard: a foreign repository's .githooks are not switched on" || fail "bash-guard: a foreign repository's .githooks are not switched on"
+
 new_repo py-repo
 touch requirements.txt; mkdir -p tests
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
@@ -1040,6 +1081,7 @@ cd "$WORK/doctor-clone"
 DOC_OUT="$(CI='' sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
 if [ "$DOC_RC" -ne 0 ]; then case "$DOC_OUT" in *"core.hooksPath"*) ok "doctor: a fresh clone without core.hooksPath is reported (exit $DOC_RC)";; *) fail "doctor: names core.hooksPath";; esac
 else fail "doctor: a fresh clone without core.hooksPath is reported (exit 0)"; fi
+[ -z "$(git config core.hooksPath)" ] && ok "doctor: its guard probe does not switch the hooks on (a check changes nothing)" || fail "doctor: its guard probe does not switch the hooks on (a check changes nothing)"
 git config core.hooksPath .githooks
 DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
 [ "$DOC_RC" -eq 0 ] && ok "doctor: with core.hooksPath set the repo checks pass" || fail "doctor: with core.hooksPath set the repo checks pass (exit $DOC_RC: $(printf '%s' "$DOC_OUT" | grep -iE 'missing|not' | head -2 | tr '\n' ' '))"
