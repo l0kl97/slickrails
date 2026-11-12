@@ -49,6 +49,10 @@ fi
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
 echo "slickrails status — $(basename "$ROOT") ($BRANCH), kit $(cat "$KIT_DIR/VERSION" 2>/dev/null || echo '?')"
 echo ""
+# an install from another kit version: say how to update (the manifest's first line names the version)
+INST_V="$(sed -n '1s/^# slickrails \([^ ]*\) .*/\1/p' .slickrails/manifest 2>/dev/null)"
+[ -n "$INST_V" ] && [ "$INST_V" != "$(cat "$KIT_DIR/VERSION" 2>/dev/null)" ] \
+  && row "Kit" "installed with $INST_V — update: slickrails init (files nobody edited are replaced)"
 
 # Health: doctor's verdict, counted; problems are named
 DOC="$(sh "$KIT_DIR/install.sh" doctor 2>&1 || true)"
