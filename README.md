@@ -1,6 +1,6 @@
 <p align="center">
   <a href="assets/slickrails-trailer.mp4"><img src="assets/slickrails-trailer.jpg" alt="slickrails trailer: your AI agent says it is done, slickrails checks" width="100%"></a>
-  <br><sub><a href="assets/slickrails-trailer.mp4">▶ Watch the trailer (20 s, with sound)</a></sub>
+  <br><sub><a href="assets/slickrails-trailer.mp4">▶ Watch the trailer (20 s)</a></sub>
 </p>
 
 # slickrails
@@ -91,7 +91,7 @@ for a body; the installer prints a command that passes.
 | Commit | `commit-msg` hook | large commits without a why+what body |
 | Push | `pre-push` hook | red typecheck/tests leaving the machine |
 | AI session | Stop hook for Claude Code and Codex CLI (+ Bash guard) | sessions claiming "done" while checks are red; `--no-verify` bypasses |
-| PR | CI workflow (per stack) | lint, typecheck, tests, build |
+| PR | CI workflow (per stack) | a missing or empty guardrail setup; the same typecheck and tests the hooks run (`.slickrails/config.sh`), plus lint and build |
 | PR | Playwright smoke workflow | browser-only bugs unit tests can't see |
 | PR | security workflow | leaked secrets in history, vulnerable deps |
 | PR | `pr-size.yml` | unreviewable 2,000-line AI mega-PRs |
@@ -115,9 +115,11 @@ agents (`--agent claude|codex|both`, default both):
 
 - **Stop gate.** The session cannot end while your checks are red. It
   also looks at committed-but-unpushed work, runs under its own
-  deadline, treats a crash as red, caches green states, and lets a
-  session go after three blocks at an unchanged state, loudly.
-- **Bash guard.** Blocks `--no-verify`, `git commit -n`,
+  deadline, treats a crash as red, and lets a session go after three
+  blocks at an unchanged state, loudly. A state it saw green is not
+  checked again, by the gate or by `pre-push`.
+- **Bash guard.** In a fresh clone it switches the git hooks on (git
+  never clones that setting). Blocks `--no-verify`, `git commit -n`,
   `SLICKRAILS_SKIP=` and switching hooks off via `core.hooksPath` in an
   agent's shell commands, and writes to the guardrail files themselves
   (hook scripts, `config.sh`, `.githooks/`, agent hook settings), also
@@ -216,6 +218,13 @@ Waive a finding type once and it stays waived; tighten one and it
 always fires. `REVIEW_PROFILE` in `config.sh` sets the strictness:
 `quiet`, `chill` (default), or `assertive`. Adaptive review, without a
 SaaS reading your code.
+
+The local review keeps itself honest and short: it reviews what the
+push adds (after a rebase, against the default branch), leaves
+lockfiles and minified files out, starts with the findings of its last
+round on that branch, and reports at most six. A diff too large to
+read in one go (`REVIEW_MAX_KB`) is cut at a file boundary, and a pass
+for the part is reported as "not reviewed", never as green.
 
 ## Measured, not claimed
 
