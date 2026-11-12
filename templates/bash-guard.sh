@@ -22,6 +22,16 @@ set -u
 
 IN="$(cat 2>/dev/null || true)"
 
+# A fresh clone has no active git hooks: core.hooksPath is local git config and is never cloned. An agent's first tool
+# call in such a clone switches them on. Only when nothing is set (another hook manager's path is left alone), and
+# only in the repository this guard belongs to: a foreign repo the agent cloned and entered keeps its hooks off.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$ROOT" ] && [ "$(cd "$ROOT" 2>/dev/null && pwd -P)" = "$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P)" ] \
+   && [ -f "$ROOT/.githooks/pre-commit" ] && [ -z "$(git config core.hooksPath 2>/dev/null || true)" ]; then
+  git config core.hooksPath .githooks 2>/dev/null \
+    && echo "slickrails: the git hooks were not active in this clone — switched on (core.hooksPath = .githooks)." >&2
+fi
+
 # Parse tool, command and file path out of the hook JSON with jq or node; only if neither can, match the raw JSON.
 PARSED=0; TOOL=""; CMD=""; FPATH=""
 if command -v jq >/dev/null 2>&1; then
