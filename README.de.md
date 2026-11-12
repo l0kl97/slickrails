@@ -39,8 +39,11 @@ slickrails init --lang de            # deutsche Doku-Templates
 </p>
 
 Ohne `curl | sh`: Repo klonen und `sh slickrails/install.sh` im Projekt
-ausführen, gleiches Ergebnis. `npx slickrails` und ein Homebrew-Tap
-kommen mit dem ersten Release.
+ausführen, gleiches Ergebnis. Später aktualisieren: `slickrails upgrade`
+(das Kit) und noch einmal `slickrails init` (das Repo: unveränderte
+Dateien werden ersetzt, bearbeitete bekommen eine `.slickrails-new`
+daneben). Ein npm-Wrapper und eine Homebrew-Formel liegen im Repo, sind
+aber noch nicht veröffentlicht.
 
 Der Installer erkennt den Stack, ist idempotent und überschreibt nie
 bestehende Dateien: abweichende Versionen landen als `*.slickrails-new`
@@ -55,8 +58,9 @@ Drei Dinge kann der Installer nicht für dich erledigen (er sagt es am
 Ende):
 
 1. **Git-Hooks in jedem Clone aktivieren.** `core.hooksPath` gilt nur
-   pro Clone; jeder frische Clone braucht
-   `git config core.hooksPath .githooks`. Ein vorhandener Hook-Manager
+   pro Clone. Der erste Tool-Aufruf eines Agenten in einem frischen Clone
+   schaltet die Hooks ein; ein Mensch führt einmal
+   `git config core.hooksPath .githooks` aus. Ein vorhandener Hook-Manager
    (Husky) wird nie umgestellt; der Installer sagt, dass die Hooks *nicht*
    aktiv sind, und wie du sie verkettest.
 2. **Agent-Hooks einmal freigeben.** Claude Code fragt vor neuen
@@ -185,9 +189,11 @@ deinen Code. Siehe [docs/features/seeded-bug-benchmark.md](docs/features/seeded-
   blockieren einen Merge, wenn sie rot sind. Unter Git Bash dauert das
   Stoppen eines hängenden Checks etwa eine Sekunde (sein `ps` ist langsam);
   die Standard-Deadline des Stop-Gates lässt 30 s Luft.
-- **Noch nicht auf echten Hosts gelaufen:** Branch Protection und der
-  Security-Workflow auf GitHub, der interaktive Codex-Trust-Flow, das
-  lokale Gate gegen einen echten GitHub- oder SSH-Remote.
+- **Einmal auf einem echten Host gelaufen:** `slickrails protect` und der
+  Security-Workflow, im Repo des Kits selbst. **Noch nicht:** die
+  Setup-Actions und Audit-Schritte der Stack-Vorlagen (das Kit hat kein
+  solches Projekt), der interaktive Codex-Trust-Flow, das lokale Gate
+  gegen einen echten GitHub- oder SSH-Remote.
 - Offen geführt in [SLICKRAILS-STATUS.md](SLICKRAILS-STATUS.md).
 
 ## Woher die Ideen kommen

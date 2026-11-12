@@ -34,8 +34,10 @@ launch steps themselves live in [LAUNCH.md](LAUNCH.md).
 - [x] **Honest installer:** no silent `core.hooksPath` switch, merged
       agent settings, a first-commit command that passes
 - [ ] **Run it on real hosts:** Linux, macOS and Windows (Git Bash) are
-      green in GitHub CI; still open: branch protection, review and
-      security workflows on GitHub, Codex's interactive trust flow
+      green in GitHub CI; `slickrails protect` and the security workflow
+      ran on the kit's own repo (1.5.0). Still open: the stack templates'
+      setup actions and audit steps, the review workflows on GitHub,
+      Codex's interactive trust flow
 - [ ] **L3: Codex as a reviewer** in the benchmark (needs a review backend)
 
 ## v1.3 — Breadth
@@ -54,6 +56,14 @@ launch steps themselves live in [LAUNCH.md](LAUNCH.md).
       reviewer, open rules, dossiers; `--github` for CI and protection)
 - [ ] **Across repos:** the same view over every repo in a folder
       (parses each `.slickrails/STATUS.md`)
+- [x] **One set of checks:** every stack's CI runs the commands from
+      `.slickrails/config.sh`, like the hooks (1.6.0)
+- [x] **Update path:** `slickrails init` again replaces the files
+      nobody edited (`.slickrails/manifest`, 1.6.0)
+- [x] **Fresh clones:** an agent's first tool call switches the git
+      hooks on (1.6.0); for humans it stays one `git config` line
+- [ ] **Audit for yarn, bun and JVM** in `security.yml` (npm, pnpm,
+      pip, Go, Rust and Ruby are covered)
 - [ ] **Package check in CI:** new lockfile entries in a PR get the same
       age check as an agent's install
 - [ ] **More registries in the package check:** cargo, go, gem, composer
@@ -69,6 +79,20 @@ launch steps themselves live in [LAUNCH.md](LAUNCH.md).
 - [x] **Adaptive review:** learnings file + review profiles
       (quiet/chill/assertive) honored by every AI review; walkthrough +
       risk-ranked findings on PRs
+- [x] **A review that starts where the last one ended:** a failed
+      review's findings go to the next one; after a rebase the base is
+      the default branch; lockfiles are left out; a cut diff is never
+      reported as a pass (1.6.0)
+- [ ] **Findings with identity:** addressed / still open / new per
+      round, and a finding a human dismissed (with the reason) stays
+      dismissed — the idea is pr-agent's
+- [ ] **Profiles:** `--profile builder-org` (review in CI with
+      `REVIEW_ON_ERROR=block`, code owners) and `--profile senior`
+      (fewer process rules), from the outside review of 1.4.0
+- [ ] **Dossier check:** the paths a dossier names still exist; a
+      feature changed without its dossier is pointed out
+- [ ] **Import boundaries in CI** per stack (dependency-cruiser and
+      its equivalents)
 - [ ] **Agent coverage matrix:** rules block ships in CLAUDE.md +
       AGENTS.md; session-level enforcement (Stop gate + Bash guard) is
       done and measured for Claude Code and Codex CLI

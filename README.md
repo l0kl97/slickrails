@@ -50,8 +50,11 @@ slickrails init                      # or: slickrails init --lang de
 </p>
 
 Prefer not to pipe curl into sh? Clone and run `sh slickrails/install.sh`
-from your project for the same result. `npx slickrails` and a Homebrew
-tap ship with the first release.
+from your project for the same result. Update later with
+`slickrails upgrade` (the kit) and `slickrails init` again (the repo:
+files nobody edited are replaced, edited ones get a `.slickrails-new`
+next to them). An npm wrapper and a Homebrew formula are prepared in the
+repo, not published yet.
 
 The installer detects your stack (Node/TypeScript with npm, pnpm, yarn
 or bun, Python, Swift, Go, Rust, Ruby, JVM), is idempotent, and **never
@@ -68,7 +71,8 @@ Three things the installer cannot do for you, and says so when it
 finishes:
 
 1. **Activate the git hooks in every clone.** `core.hooksPath` is local
-   to a clone; each fresh clone needs `git config core.hooksPath .githooks`.
+   to a clone. An agent's first tool call in a fresh clone switches the
+   hooks on; a human runs `git config core.hooksPath .githooks` once.
    An existing hook manager (Husky) is never switched; the installer
    tells you the hooks are *not* active and how to chain them.
 2. **Trust the agent hooks once.** Claude Code asks before it runs new
@@ -239,9 +243,11 @@ See [docs/features/seeded-bug-benchmark.md](docs/features/seeded-bug-benchmark.m
   mawk), macOS and Windows (Git Bash, GNU awk)**, and all three block a
   merge when red. On Git Bash, stopping a hung check takes about a
   second (its `ps` is slow); the Stop gate's default deadline leaves 30 s.
-- **Not yet run on real hosts:** branch protection and the security
-  workflow on GitHub, the interactive Codex trust flow, the local gate
-  against a real GitHub or SSH remote.
+- **Run on a real host once:** `slickrails protect` and the security
+  workflow, on the kit's own repo. **Not yet:** the setup actions and
+  audit steps of the stack templates (the kit has no such project), the
+  interactive Codex trust flow, the local gate against a real GitHub or
+  SSH remote.
 - Tracked openly in [SLICKRAILS-STATUS.md](SLICKRAILS-STATUS.md).
 
 ## How it compares

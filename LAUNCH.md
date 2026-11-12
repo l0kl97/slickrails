@@ -3,37 +3,25 @@
 Maintainer checklist for the public launch. Code quality got us here;
 distribution and first impression decide the rest.
 
-## Before flipping the repo public
+## State (2026-11-12)
 
-- [ ] `brew install gh gitleaks vhs` + `gh auth login`
-- [ ] Create repo `slickrails`, push, add topics: `ai`, `claude`,
-      `git-hooks`, `code-review`, `guardrails`, `vibe-coding`,
-      `developer-tools`
-- [x] Demo GIF recorded (demo/slickrails-demo.gif, embedded in both READMEs); re-record from the media sources in the maintainer's archive repo (`demo/`);
-      already embedded at the top of both READMEs
-- [x] Header rendered to `assets/header.png` (regenerate from the media sources in the maintainer's archive repo),
-      reference it in the README above the fold
-- [ ] Tag `v1.3.0`, create a GitHub release; fill the Homebrew formula
-      (`packaging/homebrew/slickrails.rb`) with the tarball sha256 and
-      push the tap repo (`homebrew-slickrails`)
-- [ ] `npm publish` from `npm/` (name `slickrails`)
-- [ ] Update the README quickstart to the real one-liner
-      (`curl -fsSL https://raw.githubusercontent.com/<owner>/slickrails/main/bootstrap.sh | sh`)
-- [ ] Branch protection on the kit repo itself:
-      `sh scripts/setup-branch-protection.sh`
-- [ ] Enable Discussions; create the `size-ok` and `good first issue` labels
-- [ ] Open the 10 good-first-issues below
-- [ ] **Run the kit once against a throwaway GitHub repo** (the biggest unverified part): `slickrails init`,
-      branch protection script (check the read-back), a PR with `claude-review.yml` using
-      `CLAUDE_CODE_OAUTH_TOKEN` and the Claude GitHub App (`/install-github-app`);
-      `security-review-ai.yml` with an API key; `slickrails gate` against the real remote.
-      Seen on the kit repo on 2026-10-22: without the app the review fails loudly ("Claude Code is not
-      installed on this repository"), as it should
+Done: the repo is public (one start commit, the older history lives in the maintainer's private archive),
+topics and description are set, releases are tagged on GitHub, branch protection is on (`slickrails protect`:
+pull requests required, the three CI systems, gitleaks, audit, size), the `size-ok` label exists, demo GIF,
+header and motion graphics are embedded in both READMEs.
+
+## Before launch day
+
+- [ ] `npm publish` from `npm/` (name `slickrails`; the version there follows `VERSION`)
+- [ ] Homebrew: fill the formula (`packaging/homebrew/slickrails.rb`) with the release tarball's sha256 and push
+      the tap repo (`homebrew-slickrails`); then name both in the README's install section
+- [ ] Enable Discussions; open the 10 good-first-issues below
+- [ ] **Run the kit once against a throwaway GitHub repo** (the biggest unverified part): `slickrails init` for a
+      Node and a Python project (the stack templates' setup actions and audit steps have never run), a PR with
+      `claude-review.yml` using `CLAUDE_CODE_OAUTH_TOKEN` and the Claude GitHub App (`/install-github-app`),
+      `security-review-ai.yml` with an API key, `slickrails gate` against the real remote
 - [ ] Trust flow by hand: new project hooks in Claude Code (dialog) and Codex (`/hooks`), then a red-check session must block
-- [x] Motion graphics rendered (`assets/motion/`, all GIFs ≤ 1.5 MB, loop seams checked by the render pipeline in the maintainer's archive repo) and
-      embedded in both READMEs; still to look at once on the real GitHub page (camo proxy, phone) after the push.
-      The 15 s showreel (mp4/webm with soundtrack) is not in the repo: re-render it in the archive repo with `node render.mjs --reel-only`
-- [ ] Tag date in `CHANGELOG.md` ([1.3.0]) matches the release day; `npm/package.json` and the Homebrew URL are 1.3.0
+- [ ] Look at the README once on the real GitHub page on a phone (GIFs through the camo proxy)
 
 ## Launch day (all channels the same day)
 
