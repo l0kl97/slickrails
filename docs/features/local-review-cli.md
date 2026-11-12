@@ -52,3 +52,13 @@ The PR review on GitHub failed: it needs the Claude GitHub App and a secret (API
   findings each round (four rounds on one script) → a FAIL's findings are kept in `.git/slickrails-last-review` and
   handed to the next review of that branch ("check first whether each one is fixed"); a PASS clears them. Not
   measured: whether this shortens the rounds; the benchmark has no multi-round case.
+- 2026-11-12 (1.6.0): the maintainer asked what slickrails can learn from pr-agent (open-source PR reviewer). Taken
+  over, each without more work for the human: lockfiles, minified files and source maps never reach the reviewer;
+  a diff over `REVIEW_MAX_KB` is cut at a file boundary, the reviewer gets the names of the rest, and a PASS for
+  the part is reported as an ERROR (never "green" for something nobody read); the prompt's limits on noise (only
+  what the diff introduces, no speculation without a code path, no style, at most 6 findings); the sensitive areas
+  a diff touches (CI workflows, migrations, auth, payments, infrastructure, the guardrails) are named to the
+  reviewer from the changed paths; an open finding is repeated in the same words. Not taken over: token-budget
+  packing and re-formatted hunks (our reviewer reads files itself), YAML repair (we have a schema), a required
+  human approval on risky paths (that is `CODEOWNER_REVIEWS=1`, opt-in). Not measured: the effect of the new
+  prompt rules and hints on what the benchmark catches.

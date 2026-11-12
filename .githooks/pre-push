@@ -97,7 +97,7 @@ if [ "${CHECK_PREPUSH_REVIEW:-0}" = "1" ] && [ -f .slickrails/ai-review.sh ]; th
 fi
 
 if [ "${UNREVIEWED:-0}" = "1" ]; then
-  say "Checks green — push goes out, but the AI review did NOT run (see the ERROR above)."
+  say "Checks green — push goes out, but the AI review did NOT run, or not for all of it (see the ERROR above)."
 else
   say "All green — push goes out."
 fi
