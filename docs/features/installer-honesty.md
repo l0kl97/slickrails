@@ -76,3 +76,5 @@ active hooks (`core.hooksPath` is local git config) and nothing said so; and the
   ended with exit 1 after applying everything (a `[ … ] &&` as its last command) → explicit `exit 0`; a last commit
   that skipped CI made it fall back to plain `ci` without a word → a kit job missing from the check runs is named;
   a failing `gh` call looked like "nothing ran yet" and had no deadline → 30 s deadline, the failure is said.
+- 2026-11-12 (1.6.0): first real run of `slickrails protect` (on the kit repo) printed "no check named size" for a
+  healthy setup: `size` only runs on pull requests, so a branch's own commits never carry it → not expected there.
