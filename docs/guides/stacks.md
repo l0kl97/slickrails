@@ -14,6 +14,15 @@ wins): python → swift → go → rust → ruby → jvm → **node**.
 | Ruby | `Gemfile` | `rspec` (if `spec/`) or `rake test` | `ci-ruby.yml` |
 | JVM | `pom.xml` / `build.gradle(.kts)` | `mvn test` / `gradlew test` | `ci-jvm.yml` |
 
+**One set of checks:** the CI template runs the commands from
+`.slickrails/config.sh` (after installing the stack's dependencies), the
+same ones the pre-push hook and the Stop gate run. Change a check there
+and CI follows. Lint, formatting and build steps stay in the template.
+
+**Dependency audit** (`security.yml`): npm, pnpm, pip, Go
+(`govulncheck`), Rust (`cargo audit`), Ruby (`bundler-audit`), each only
+when its lockfile is there. Not covered: yarn, bun, JVM.
+
 **Node package managers:** the lockfile decides — `pnpm-lock.yaml`,
 `yarn.lock`, `bun.lockb`/`bun.lock`, else npm. Local checks and the CI
 template both follow it.

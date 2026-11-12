@@ -53,3 +53,14 @@ The maintainer: "setz bitte alles um" (implement all of it).
 ## History
 - 2026-11-11: created (1.5.0). The local review (claude) found before the first push that a fresh install for a stack
   without a detectable check would fail CI with no warning at install time → the installer and doctor say it.
+- 2026-11-12 (1.6.0): the CI templates ran their own test commands (package scripts, `pytest`, `go test`, …) while
+  the hooks ran `.slickrails/config.sh`: a check changed in one place was green locally and different in CI → every
+  stack's `ci` job now runs the `config.sh` checks after installing dependencies; lint, format and build steps stay.
+  The templates had also fallen behind the kit's own workflows (`actions/checkout@v4` against `v7`; Dependabot only
+  sees `.github/`) → all actions bumped to their current major, and a test fails when a template uses another
+  version than the kit's own workflows. The audit covered npm and pip only → pnpm, Go, Rust and Ruby added
+  (yarn, bun, JVM: none, said in the template). An empty `CHECK_TEST` fails the step instead of passing silently (an empty `CHECK_TYPECHECK` is skipped with a
+  line in the log). Not covered: npm's and pnpm's generated `… --if-present` commands still pass when `package.json`
+  has no test script, as the old template's skip did. Every bumped major tag was confirmed to exist
+  (`gh api repos/<action>/git/ref/tags/<major>`, 2026-11-12). Not run by the kit's CI: the bumped setup actions and the new audit
+  steps (the kit has no such project); the first project on each stack is their test.
