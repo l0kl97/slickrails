@@ -245,6 +245,14 @@ while [ $# -gt 0 ]; do
             fi
           done
         done
+        # kit updates that wait next to an edited file (init leaves them for the human): until decided, that file is
+        # on an older kit version
+        DOC_NEW="$(cd "$DOC_ROOT" && find . -name '*.slickrails-new' -not -path './.git/*' -not -path '*/node_modules/*' | sed 's|^\./||' | sort)"
+        if [ -n "$DOC_NEW" ]; then
+          say "  WARN     $(printf '%s\n' "$DOC_NEW" | grep -c .) open .slickrails-new — a newer kit file waits next to yours:"
+          printf '%s\n' "$DOC_NEW" | while read -r DOC_F; do say "           $DOC_F"; done
+          say "           next, for each file F: look: diff F F.slickrails-new · take it: mv F.slickrails-new F · keep yours: rm F.slickrails-new"
+        fi
         # Self-test: installed is not the same as working. The guard and the pre-commit hook get a probe each (the
         # pre-commit one in a scratch repo, so neither this repo nor its config.sh is touched).
         if [ -x "$DOC_ROOT/.slickrails/bash-guard.sh" ]; then
@@ -353,15 +361,17 @@ fi
 # Copies only if the destination doesn't exist. A file that differs is replaced when it is still what an earlier
 # install placed from the same template (.slickrails/manifest holds hash, path and template: that is the update
 # path), and gets a .slickrails-new next to it when someone edited it or the template is another one (--lang, stack). New files are counted and only listed with --verbose; the rest is always said.
-ADDED=0
-MANIFEST=".slickrails/manifest"; PLACED=""
+ADDED=0; REPLACED=0; KEPT=0
+IS_UPDATE=0; [ -f .slickrails/config.sh ] && IS_UPDATE=1   # every release so far wrote config.sh: an install is there
+MANIFEST=".slickrails/manifest"; PLACED=""; KIT_VERSION="$(cat "$KIT_DIR/VERSION" 2>/dev/null || echo unknown)"
+RELEASES="$KIT_DIR/templates/release-hashes"   # every released template's hash (scripts/release-hashes.sh): installs without a manifest
 added() { ADDED=$((ADDED + 1)); [ "$VERBOSE" = "1" ] && say "  + $1"; return 0; }
 place() { # place <src> <dest>
   SRC="$1"; DEST="$2"
   mkdir -p "$(dirname "$DEST")"
   FROM="${SRC#"$KIT_DIR"/}"   # which template: another language or stack is another file, not an update
-  PLACED="$PLACED$(git hash-object "$SRC") $DEST $FROM
-"
+  # the line this file gets in the manifest when it ends up as the kit's version (a kept file keeps its old line)
+  NOW="$(git hash-object "$SRC") $DEST $FROM $KIT_VERSION"
   if [ ! -f "$DEST" ]; then
     cp "$SRC" "$DEST"
     added "$DEST"
@@ -369,11 +379,26 @@ place() { # place <src> <dest>
     :
   elif [ "$(awk -v d="$DEST" -v f="$FROM" '$2 == d && $3 == f { print $1 }' "$MANIFEST" 2>/dev/null)" = "$(git hash-object "$DEST")" ]; then
     cat "$SRC" > "$DEST"   # write through: keeps the file mode
-    say "  ~ $DEST updated (it was unchanged since the last install)"
+    say "  ~ $DEST updated (it was unchanged since the last install)"; REPLACED=$((REPLACED + 1))
+  elif REL="$(awk -v h="$(git hash-object "$DEST")" -v f="$FROM" '$1 == h && $2 == f { print $3; exit }' "$RELEASES" 2>/dev/null)" && [ -n "$REL" ]; then
+    cat "$SRC" > "$DEST"   # an install from before the manifest: still the unedited template of a release
+    say "  ~ $DEST updated (it was the unchanged file of slickrails $REL)"; REPLACED=$((REPLACED + 1))
   else
-    cp "$SRC" "$DEST.slickrails-new"
-    warn "$DEST exists and was edited — the new version was placed at $DEST.slickrails-new."
+    cp "$SRC" "$DEST.slickrails-new"; KEPT=$((KEPT + 1))
+    # why it is kept: the manifest knows what the last install placed here; without it, nobody knows who changed it
+    WAS="$(awk -v d="$DEST" '$2 == d { print $1 " " $3; exit }' "$MANIFEST" 2>/dev/null || true)"
+    if [ -z "$WAS" ]; then
+      warn "$DEST: origin unknown (not the unedited file of any slickrails release; maybe edited) — kept; the new version is at $DEST.slickrails-new."
+    elif [ "${WAS#* }" != "$FROM" ]; then
+      warn "$DEST came from another template (another --lang or stack) — kept; the new version is at $DEST.slickrails-new."
+    else
+      warn "$DEST was changed by you since the last install — kept; the new version is at $DEST.slickrails-new."
+    fi
+    # not on this kit version: the manifest keeps what it knew (the last install's hash), or nothing
+    NOW="$(awk -v d="$DEST" '$2 == d' "$MANIFEST" 2>/dev/null || true)"
   fi
+  [ -n "$NOW" ] && PLACED="$PLACED$NOW
+"
   return 0
 }
 
@@ -595,6 +620,12 @@ if ! grep -qE '^\.env$' .gitignore; then
   printf '\n# slickrails\n.env\n.env.*\n!.env.example\n' >> .gitignore
   say "  ~ .gitignore extended with .env rules"
 fi
+# a kit update waiting next to an edited file is the human's decision, not something to commit by accident (git add -A)
+if ! grep -qxF '*.slickrails-new' .gitignore; then
+  [ -n "$(tail -c 1 .gitignore)" ] && printf '\n' >> .gitignore   # a last line without newline stays intact
+  printf '# slickrails: kit updates waiting next to an edited file (slickrails doctor lists them)\n*.slickrails-new\n' >> .gitignore
+  say "  ~ .gitignore ignores *.slickrails-new"
+fi
 
 # ---------------------------------------------------------------- STATUS ----
 if [ ! -f .slickrails/STATUS.md ]; then
@@ -633,11 +664,24 @@ for AGENT_FILE in CLAUDE.md AGENTS.md; do
   fi
 done
 
-# what was placed, for the next run: a file that still has this hash then was not edited and can be updated
-{ printf '# slickrails %s — what the installer placed: hash, file, template. Commit it; do not edit.\n' "$(cat "$KIT_DIR/VERSION" 2>/dev/null)"
+# what was placed, for the next run: a file that still has this hash then was not edited and can be updated. The
+# version column is per file: a kept file keeps the line of the version it is on (or has none when that is unknown).
+{ printf '# slickrails %s — what the installer placed: hash, file, template, kit version of the file. Commit it; do not edit.\n' "$KIT_VERSION"
   printf '%s' "$PLACED"; } > "$MANIFEST"
 
 say ""
+# An update: what happened to the kit files, and what is left to decide. The first-install text does not apply.
+if [ "$IS_UPDATE" = "1" ]; then
+  OPEN="$(find . -name '*.slickrails-new' -not -path './.git/*' -not -path '*/node_modules/*' | sed 's|^\./||' | sort)"
+  N_OPEN="$(printf '%s' "$OPEN" | grep -c . || true)"
+  say "Updated to slickrails $KIT_VERSION: $REPLACED replaced, $KEPT kept (edited or of unknown origin), $N_OPEN open .slickrails-new, $ADDED new."
+  if [ "$N_OPEN" -gt 0 ]; then
+    printf '%s\n' "$OPEN" | while read -r F; do say "  ! $F"; done
+    say "  Next, for each file F: look: diff F F.slickrails-new · take it: mv F.slickrails-new F · keep yours: rm F.slickrails-new"
+  fi
+  say "  Then commit the update: git add -A && git commit -m \"Update slickrails to $KIT_VERSION\" -m \"Why: <what the new kit brings>\""
+  exit 0
+fi
 say "Done: $ADDED files added (list them: git status; or run with --verbose)."
 # Next steps: only the ones that apply to this repo
 ON_GITHUB=0; case "$(git remote get-url origin 2>/dev/null || true)" in *github.com*) ON_GITHUB=1;; esac

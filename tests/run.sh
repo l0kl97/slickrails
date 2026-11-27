@@ -174,7 +174,7 @@ sc 1 "a fresh install without a detectable check fails (the installer said so)" 
 case "$(sh "$KIT_DIR/install.sh" doctor 2>&1)" in *"no checks configured"*"setup check in CI fails"*) ok "doctor: an empty config.sh names the CI consequence too";; *) fail "doctor: an empty config.sh names the CI consequence too";; esac
 
 # Update path: a file that is still what an earlier install placed is replaced by the kit's version; an edited one is not
-grep -q '^# slickrails ' .slickrails/manifest && grep -q ' .githooks/pre-push templates/hooks/pre-push$' .slickrails/manifest \
+grep -q '^# slickrails ' .slickrails/manifest && grep -q ' .githooks/pre-push templates/hooks/pre-push [0-9]' .slickrails/manifest \
   && ok "installer: writes .slickrails/manifest (what it placed)" || fail "installer: writes .slickrails/manifest (what it placed)"
 printf '#!/bin/sh\n# an older kit version\n' > .githooks/pre-push
 OLD_HASH="$(git hash-object .githooks/pre-push)"
@@ -185,6 +185,7 @@ case "$UP_OUT" in *".githooks/pre-push updated"*) true;; *) false;; esac \
   && cmp -s .githooks/pre-push "$KIT_DIR/templates/hooks/pre-push" && [ -x .githooks/pre-push ] && [ ! -e .githooks/pre-push.slickrails-new ] \
   && ok "installer: a file unchanged since the last install is updated in place (still executable)" || fail "installer: a file unchanged since the last install is updated in place"
 grep -q 'my own line' .githooks/commit-msg && [ -f .githooks/commit-msg.slickrails-new ] \
+  && case "$UP_OUT" in *".githooks/commit-msg was changed by you"*) true;; *) false;; esac \
   && ok "installer: an edited file is kept, the new version lands next to it" || fail "installer: an edited file is kept, the new version lands next to it"
 rm -f .githooks/commit-msg.slickrails-new; cp "$KIT_DIR/templates/hooks/commit-msg" .githooks/commit-msg
 # another template for the same file (here: the language) is not an update — the unedited German rulebook stays
@@ -195,6 +196,77 @@ cp .slickrails/SLICKRAILS.md "$WORK/rulebook.de"
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 cmp -s .slickrails/SLICKRAILS.md "$WORK/rulebook.de" && [ -f .slickrails/SLICKRAILS.md.slickrails-new ] \
   && ok "installer: a rerun in another language does not replace the unedited files of the first one" || fail "installer: a rerun in another language does not replace the unedited files of the first one"
+# Upgrade from a release before the manifest (1.4.0, 1.5.0): installed from the release tag (unpacked into this run's
+# temporary folder), then init from here — every file nobody edited is replaced, none gets a .slickrails-new
+if [ -z "$(git -C "$KIT_DIR" tag -l 'v1.4.0' 'v1.5.0')" ]; then
+  fail "installer: upgrade from 1.4.0/1.5.0 — needs the kit's release tags (git fetch --tags)"
+else
+  for OLD in v1.4.0 v1.5.0; do
+    OLD_KIT="$WORK/kit-$OLD"; mkdir -p "$OLD_KIT"; git -C "$KIT_DIR" archive "$OLD" | tar -x -C "$OLD_KIT"
+    new_repo "upgrade-from-$OLD"
+    printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
+    sh "$OLD_KIT/install.sh" >/dev/null 2>&1
+    UPG_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+    UPG_NEW="$(find . -name '*.slickrails-new' -not -path './.git/*' | tr '\n' ' ')"
+    [ -z "$UPG_NEW" ] && cmp -s .githooks/pre-push "$KIT_DIR/templates/hooks/pre-push" \
+      && cmp -s .slickrails/bash-guard.sh "$KIT_DIR/templates/bash-guard.sh" \
+      && ok "installer: upgrade from $OLD replaces every unedited kit file (no .slickrails-new)" \
+      || fail "installer: upgrade from $OLD replaces every unedited kit file (left: $UPG_NEW)"
+    # an update ends with what happened to the kit files, not with the first-install text
+    case "$UPG_OUT" in *"Updated to slickrails"*"replaced"*"0 kept"*"0 open"*) true;; *) false;; esac \
+      && case "$UPG_OUT" in *"Install slickrails"*) false;; *) true;; esac \
+      && ok "installer: an update from $OLD ends with its own summary (replaced / kept / open)" \
+      || fail "installer: an update from $OLD ends with its own summary (replaced / kept / open)"
+  done
+  # an edited file from such an install is kept; without a manifest nobody knows who changed it, and the message says so
+  new_repo upgrade-edited
+  printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
+  sh "$WORK/kit-v1.4.0/install.sh" >/dev/null 2>&1
+  printf '\n# my own line\n' >> .slickrails/ai-review.sh
+  UPG_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+  grep -q 'my own line' .slickrails/ai-review.sh && [ -f .slickrails/ai-review.sh.slickrails-new ] \
+    && case "$UPG_OUT" in *"ai-review.sh: origin unknown"*) true;; *) false;; esac \
+    && case "$UPG_OUT" in *"ai-review.sh"*"changed by you"*) false;; *) true;; esac \
+    && ok "installer: an edited file from an install without manifest is kept, and called 'origin unknown'" \
+    || fail "installer: an edited file from an install without manifest is kept, and called 'origin unknown'"
+  case "$UPG_OUT" in *"Updated to slickrails"*"1 kept"*"1 open"*".slickrails/ai-review.sh"*"diff"*) true;; *) false;; esac \
+    && ok "installer: the update summary counts the kept file, lists the open .slickrails-new and the next step" \
+    || fail "installer: the update summary counts the kept file, lists the open .slickrails-new and the next step"
+  # the manifest names the kit version only for files that have it: the replaced hook yes, the kept edited file no
+  KIT_V="$(cat "$KIT_DIR/VERSION")"
+  grep -q "^[0-9a-f]* .githooks/pre-push templates/hooks/pre-push $KIT_V\$" .slickrails/manifest \
+    && ! grep -q " .slickrails/ai-review.sh .* $KIT_V\$" .slickrails/manifest \
+    && ok "installer: the manifest records the kit version only for files that are on it" \
+    || fail "installer: the manifest records the kit version only for files that are on it ($(grep -c . .slickrails/manifest) lines)"
+  # an open .slickrails-new is said by doctor and status, with the next step; a repo without one hears nothing of it
+  DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; ST_OUT="$(sh "$KIT_DIR/scripts/status.sh" 2>&1)"
+  case "$DOC_OUT" in *"WARN     1 open .slickrails-new"*".slickrails/ai-review.sh"*"diff "*"mv "*"rm "*) true;; *) false;; esac \
+    && ok "doctor: counts the open .slickrails-new and names the next step" || fail "doctor: counts the open .slickrails-new and names the next step"
+  case "$ST_OUT" in *"1 open .slickrails-new"*"diff"*) true;; *) false;; esac \
+    && ok "status: counts the open .slickrails-new and names the next step" || fail "status: counts the open .slickrails-new and names the next step"
+  # ...and does not go into the repository with the next `git add -A`; a rerun adds the ignore line only once
+  git add -A
+  sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+  [ -z "$(git ls-files '*.slickrails-new')" ] && [ "$(grep -cx '\*\.slickrails-new' .gitignore)" = "1" ] \
+    && ok "installer: .slickrails-new files are git-ignored (once), git add -A leaves them out" \
+    || fail "installer: .slickrails-new files are git-ignored (once), git add -A leaves them out"
+  new_repo gitignore-no-newline
+  printf '.env\nnode_modules' > .gitignore
+  FIRST_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+  case "$FIRST_OUT" in *"Updated to slickrails"*) false;; *"Install slickrails"*) true;; *) false;; esac \
+    && ok "installer: a first install still ends with the first-install steps, not the update summary" \
+    || fail "installer: a first install still ends with the first-install steps, not the update summary"
+  grep -qx 'node_modules' .gitignore && grep -qx '\*\.slickrails-new' .gitignore \
+    && ok "installer: a .gitignore without a final newline keeps its last line intact" \
+    || fail "installer: a .gitignore without a final newline keeps its last line intact"
+  cd "$WORK/upgrade-from-v1.5.0"
+  case "$(sh "$KIT_DIR/install.sh" doctor 2>&1; sh "$KIT_DIR/scripts/status.sh" 2>&1)" in *"slickrails-new"*) false;; *) true;; esac \
+    && ok "doctor/status: nothing said about .slickrails-new when there is none" || fail "doctor/status: nothing said about .slickrails-new when there is none"
+  # the shipped list is what the release tags hold: generated, never edited by hand
+  sh "$KIT_DIR/scripts/release-hashes.sh" 2>/dev/null | cmp -s - "$KIT_DIR/templates/release-hashes" \
+    && ok "templates/release-hashes is generated from the release tags (sh scripts/release-hashes.sh)" \
+    || fail "templates/release-hashes is generated from the release tags — out of date: sh scripts/release-hashes.sh > templates/release-hashes"
+fi
 new_repo prep-repo
 printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1

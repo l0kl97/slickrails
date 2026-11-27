@@ -19,6 +19,10 @@ the PR so a maintainer can.
    explaining *why* and *what*.
 3. Keep PRs small (rule 12 applies to us too: < ~800 changed lines).
 4. Shell code is POSIX `sh` — no bashisms. `shellcheck` runs in CI.
+5. The suite needs the release tags (`git fetch --tags`): it installs old
+   releases and checks `templates/release-hashes`. After tagging a release,
+   regenerate that file (`sh scripts/release-hashes.sh > templates/release-hashes`)
+   so upgrades from that release replace its unedited files.
 
 ## What makes a good contribution
 

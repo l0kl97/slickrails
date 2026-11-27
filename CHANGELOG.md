@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Fixed
+- Upgrade from an install before 1.6.0 (no manifest): the kit ships the hashes of every released template
+  (`templates/release-hashes`, generated from the release tags by `scripts/release-hashes.sh`), so a file that is still
+  a release's unedited template is replaced instead of getting a `.slickrails-new`. A kept file is called "changed by
+  you" (the manifest knows it) or "origin unknown" (no manifest), and the manifest records the kit version per file,
+  only for files that have it
+- `slickrails doctor` and `slickrails status` count open `.slickrails-new` files and name the next step (diff, take
+  it, delete it); `init` adds `*.slickrails-new` to `.gitignore`, so `git add -A` leaves them out
+- `slickrails init` on an existing install ends with an update summary (replaced / kept / open) instead of the
+  first-install steps
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0

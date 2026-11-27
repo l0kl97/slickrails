@@ -53,6 +53,9 @@ echo ""
 INST_V="$(sed -n '1s/^# slickrails \([^ ]*\) .*/\1/p' .slickrails/manifest 2>/dev/null)"
 [ -n "$INST_V" ] && [ "$INST_V" != "$(cat "$KIT_DIR/VERSION" 2>/dev/null)" ] \
   && row "Kit" "installed with $INST_V — update: slickrails init (files nobody edited are replaced)"
+# kit updates that wait next to an edited file: that file is still on an older kit version
+N_NEW="$(find . -name '*.slickrails-new' -not -path './.git/*' -not -path '*/node_modules/*' | grep -c . || true)"
+[ "$N_NEW" -gt 0 ] && row "Updates" "$N_NEW open .slickrails-new — diff each against your file, then take it (mv) or delete it (list: slickrails doctor)"
 
 # Health: doctor's verdict, counted; problems are named
 DOC="$(sh "$KIT_DIR/install.sh" doctor 2>&1 || true)"
