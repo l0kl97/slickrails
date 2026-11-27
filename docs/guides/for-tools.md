@@ -56,9 +56,11 @@ installer knows.
 
 ### The guardrail paths
 
-- `.githooks/`, `.slickrails/` (its `*.sh` files above all), `.claude/settings.json`, `.claude/settings.local.json`
-  and `.codex/hooks.json` are the guardrails. The Bash guard blocks agents from changing or deleting them. A tool
-  that decides what an agent may merge on its own can treat these paths as sensitive.
+- The guardrails are everything under `.githooks/`, the `*.sh` files directly in `.slickrails/` (which includes
+  `config.sh`), `.claude/settings.json`, `.claude/settings.local.json` and `.codex/hooks.json`. The Bash guard
+  blocks agents from changing or deleting these files, and from removing `.slickrails/` as a whole. The other files
+  in `.slickrails/` (`rules.md`, `review-learnings.md`, `STATUS.md`) are not guarded. A tool that decides on its own
+  what an agent may merge can still treat all of `.slickrails/` as sensitive.
 
 ## Coming with SLI-175 (not released yet)
 

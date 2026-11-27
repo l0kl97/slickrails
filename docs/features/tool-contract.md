@@ -38,7 +38,11 @@ plus a note to slickfab about the same PATH setup; the CHANGELOG names contract 
 
 ## Limits & open items
 - The guarantees describe what the installer writes. A team may edit `config.sh`; readers must cope with that.
-- slickfab still has to build the same PATH as the hooks once SLI-175 ships (issue for the slickfab project).
+- slickfab still has to build the same PATH as the hooks once SLI-175 ships: SLI-212 in the slickfab project. It also
+  covers a small difference: slickfab-worktree turns the hooks on as soon as `.githooks/` exists, slickrails only
+  when `.githooks/pre-commit` exists.
 
 ## History
 - 2026-11-27: created (SLI-193)
+- 2026-11-27: review follow-up. The guardrail paths in `for-tools.md` said all of `.slickrails/` is guarded; the Bash
+  guard protects only the `*.sh` files in it and the folder as a whole. Text corrected, slickfab issue named.
