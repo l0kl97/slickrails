@@ -23,6 +23,7 @@ active hooks (`core.hooksPath` is local git config) and nothing said so; and the
 - `install.sh` — hooksPath handling, settings merge, status, `doctor`
 - `templates/bash-guard.sh`, `templates/claude-settings.json` (PreToolUse entry)
 - `scripts/setup-branch-protection.sh`
+- `bootstrap.sh` — the one-line install; runs `doctor` at the end and reports, but does not fail on, the current project's problems
 - `tests/run.sh` — "installer honesty" block (Husky, settings merge/idempotence/broken JSON, guard patterns, doctor in a fresh clone, protection script with a `gh` stub)
 - `tests/benchmark/cases/{inst-husky-clobber,inst-fresh-repo,agent-no-verify,agent-git-status}` — two faults, two controls
 - `tests/benchmark/host/claude-bash-guard.sh` — real Claude Code: ordinary commit goes through, `--no-verify` without the guard goes through, with the guard it is stopped
@@ -78,3 +79,4 @@ active hooks (`core.hooksPath` is local git config) and nothing said so; and the
   a failing `gh` call looked like "nothing ran yet" and had no deadline → 30 s deadline, the failure is said.
 - 2026-11-12 (1.6.0): first real run of `slickrails protect` (on the kit repo) printed "no check named size" for a
   healthy setup: `size` only runs on pull requests, so a branch's own commits never carry it → not expected there.
+- 2026-11-27 (SLI-213): symptom: the one-line install (`curl … | sh`) run inside a project whose installation `doctor` finds problems (e.g. no `core.hooksPath`) ended with exit 1 and without the closing line, although the kit and the `slickrails` command were already installed — it looked like a failed install (more often since an empty `CHECK_TEST` counts as a problem, SLI-190). Cause: `bootstrap.sh` runs with `set -eu` and called `install.sh doctor` as its last step. Fix: doctor's exit status is caught; doctor's output is still shown, the install ends with exit 0, and the closing line names the problems when there were any. A failed clone or link still ends with an error (`set -e` stays). Tests: red doctor in the current project (red first), green doctor without the hint, failed clone, a bin dir that cannot be created.

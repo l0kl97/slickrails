@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Fixed
+- `bootstrap.sh` no longer fails when the closing `doctor` finds problems in the current project: the kit is
+  installed, so the install ends with exit 0 and the closing line points to the problems. A failed clone or link
+  still fails (SLI-213)
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
