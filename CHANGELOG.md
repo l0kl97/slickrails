@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Changed
+- The README (en + de) opens with the brand header, in a light and a dark variant that follow the reader's theme;
+  the trailer sits right below it. `assets/social-preview.png` (1280×640) is ready for the repository's social preview
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0

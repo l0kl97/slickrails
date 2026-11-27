@@ -1,9 +1,13 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/header.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/header-light.png">
+  <img src="assets/header.png" alt="slickrails: guardrails for AI-built codebases" width="100%">
+</picture>
+
 <p align="center">
   <a href="assets/slickrails-trailer.mp4"><img src="assets/slickrails-trailer.jpg" alt="slickrails trailer: your AI agent says it is done, slickrails checks" width="100%"></a>
   <br><sub><a href="assets/slickrails-trailer.mp4">▶ Watch the trailer (20 s)</a></sub>
 </p>
-
-# slickrails
 
 **Guardrails for AI-built codebases.** Everyone on your team can build
 now; slickrails makes it safe to ship what they build. One command
