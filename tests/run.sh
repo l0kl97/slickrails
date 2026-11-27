@@ -172,6 +172,77 @@ case "$SE_OUT" in *"checks nothing"*"setup"*"CI fails"*) ok "installer: a projec
   *) fail "installer: a project without a detectable check is told that config.sh checks nothing and CI will fail";; esac
 sc 1 "a fresh install without a detectable check fails (the installer said so)" X=1
 case "$(sh "$KIT_DIR/install.sh" doctor 2>&1)" in *"no checks configured"*"setup check in CI fails"*) ok "doctor: an empty config.sh names the CI consequence too";; *) fail "doctor: an empty config.sh names the CI consequence too";; esac
+# ---- stack and package manager detection (SLI-190) ----------------------------------------------------------
+cfg_line() { grep "^$1=" .slickrails/config.sh; }   # cfg_line <VAR> -> the line config.sh got
+# a Python repo with a package.json only for Prettier is Python: pytest is the check, not an empty npm test
+new_repo stack-py-helper-pkg
+printf '{"name":"t","devDependencies":{"prettier":"^3.0.0"},"scripts":{"format":"prettier -w ."}}' > package.json
+printf '[project]\nname = "t"\n' > pyproject.toml; mkdir tests
+SD_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="python3 -m pytest -q"' ] && case "$SD_OUT" in *"Detected stack: python"*) true;; *) false;; esac \
+  && ok "stack: a Python repo whose package.json has no test/typecheck script is Python (pytest)" \
+  || fail "stack: a Python repo whose package.json has no test/typecheck script is Python (got $(cfg_line CHECK_TEST))"
+# boundary: a package.json with a test script still makes it a Node project, Python files or not
+new_repo stack-py-node-tests
+printf '{"name":"t","scripts":{"test":"vitest"}}' > package.json; printf '[project]\nname = "t"\n' > pyproject.toml; mkdir tests
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="npm test --if-present"' ] \
+  && ok "stack: a package.json with a test script stays Node next to pyproject.toml" || fail "stack: a package.json with a test script stays Node next to pyproject.toml (got $(cfg_line CHECK_TEST))"
+# requirements-dev.txt alone marks Python too; a package.json that is not valid JSON has no scripts
+new_repo stack-py-reqs-dev
+printf '{"name":"t",' > package.json; printf 'pytest\n' > requirements-dev.txt; mkdir tests
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="python3 -m pytest -q"' ] \
+  && ok "stack: requirements-dev.txt with a broken helper package.json is Python" || fail "stack: requirements-dev.txt with a broken helper package.json is Python (got $(cfg_line CHECK_TEST))"
+# package manager: the packageManager field decides, not which lockfile the installer happens to look at last
+new_repo pm-field-pnpm
+printf '{\n  "name": "t",\n  "packageManager": "pnpm@10.32.1",\n  "scripts": {"test": "vitest"}\n}\n' > package.json
+: > pnpm-lock.yaml; : > bun.lockb
+PM_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="pnpm run --if-present test"' ] \
+  && ok "pm: packageManager pnpm@… wins over a bun.lockb next to pnpm-lock.yaml" || fail "pm: packageManager pnpm@… wins over a bun.lockb next to pnpm-lock.yaml (got $(cfg_line CHECK_TEST))"
+case "$PM_OUT" in *"several lockfiles"*) fail "pm: no lockfile warning when packageManager decides";; *) ok "pm: no lockfile warning when packageManager decides";; esac
+# several lockfiles without packageManager: a choice is made (bun, as before) and said, with both lockfiles named
+new_repo pm-two-locks
+printf '{"name":"t","scripts":{"test":"vitest"}}' > package.json; : > pnpm-lock.yaml; : > bun.lockb
+PM_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+case "$PM_OUT" in *"several lockfiles (pnpm-lock.yaml, bun.lockb)"*"using bun"*"packageManager"*) ok "pm: several lockfiles without packageManager are warned about, with the choice";;
+  *) fail "pm: several lockfiles without packageManager are warned about, with the choice ($(printf '%s' "$PM_OUT" | grep -i lockfile))";; esac
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="bun run test"' ] && ok "pm: ...and the warned choice is what config.sh gets" || fail "pm: ...and the warned choice is what config.sh gets (got $(cfg_line CHECK_TEST))"
+# one lockfile: no warning
+new_repo pm-one-lock
+printf '{"name":"t","scripts":{"test":"vitest"}}' > package.json; : > yarn.lock
+case "$(sh "$KIT_DIR/install.sh" 2>&1)" in *"several lockfiles"*) fail "pm: a single lockfile is no warning";; *"Package manager: yarn"*) ok "pm: a single lockfile is no warning";; *) fail "pm: a single lockfile is no warning (no 'Package manager: yarn')";; esac
+# packageManager npm overrides a bun lockfile too; an unknown value is said and ignored (the lockfile decides)
+new_repo pm-field-npm
+printf '{"name":"t","packageManager":"npm@10.9.0","scripts":{"test":"vitest"}}' > package.json; : > bun.lockb
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="npm test --if-present"' ] && ok "pm: packageManager npm@… wins over bun.lockb" || fail "pm: packageManager npm@… wins over bun.lockb (got $(cfg_line CHECK_TEST))"
+new_repo pm-field-unknown
+printf '{"name":"t","packageManager":"deno@2.0.0","scripts":{"test":"vitest"}}' > package.json; : > pnpm-lock.yaml
+PM_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+case "$PM_OUT" in *'packageManager "deno"'*"ignored"*) ok "pm: an unknown packageManager is named and ignored";; *) fail "pm: an unknown packageManager is named and ignored";; esac
+[ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="pnpm run --if-present test"' ] && ok "pm: ...the lockfile decides then" || fail "pm: ...the lockfile decides then (got $(cfg_line CHECK_TEST))"
+# an existing config.sh is never rewritten, even when the detection would now choose differently
+cd "$WORK/stack-py-helper-pkg"
+printf 'CHECK_TEST="npm run my-own"\n' > .slickrails/config.sh; cp .slickrails/config.sh "$WORK/own-config"
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+cmp -s .slickrails/config.sh "$WORK/own-config" && ok "stack: an existing config.sh is left as it is on a rerun" || fail "stack: an existing config.sh is left as it is on a rerun"
+# doctor: a CHECK_TEST that checks nothing is a problem (exit 1), not a note from the day of the install
+DOC_BASE="$(cat "$WORK/own-config")"
+printf 'CHECK_TYPECHECK="tsc --noEmit"\nCHECK_TEST=""\n' > .slickrails/config.sh
+DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
+case "$DOC_OUT" in *"PROBLEM  CHECK_TEST"*"checks nothing"*) [ "$DOC_RC" -ne 0 ] && ok "doctor: an empty CHECK_TEST next to a typecheck is a problem (exit $DOC_RC)" || fail "doctor: an empty CHECK_TEST next to a typecheck is a problem (exit 0)";;
+  *) fail "doctor: an empty CHECK_TEST next to a typecheck is a problem ($(printf '%s' "$DOC_OUT" | grep -i check | head -3 | tr '\n' ' '))";; esac
+printf 'CHECK_TYPECHECK=""\nCHECK_TEST=""\n' > .slickrails/config.sh
+DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
+case "$DOC_OUT" in *"PROBLEM  no checks configured"*) [ "$DOC_RC" -ne 0 ] && ok "doctor: a config.sh without any check is a problem (exit $DOC_RC)" || fail "doctor: a config.sh without any check is a problem (exit 0)";;
+  *) fail "doctor: a config.sh without any check is a problem";; esac
+printf '%s\n' "$DOC_BASE" > .slickrails/config.sh
+DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
+case "$DOC_OUT" in *"CHECK_TEST"*"checks nothing"*|*"no checks configured"*) fail "doctor: a set CHECK_TEST is not called empty";;
+  *"defines checks"*) [ "$DOC_RC" -eq 0 ] && ok "doctor: a set CHECK_TEST is not called empty (exit 0)" || fail "doctor: a set CHECK_TEST is not called empty (exit $DOC_RC)";;
+  *) fail "doctor: a set CHECK_TEST is not called empty (no 'defines checks')";; esac
 
 # Update path: a file that is still what an earlier install placed is replaced by the kit's version; an edited one is not
 grep -q '^# slickrails ' .slickrails/manifest && grep -q ' .githooks/pre-push templates/hooks/pre-push [0-9]' .slickrails/manifest \
@@ -1162,6 +1233,7 @@ case "$GUARD_MSG" in *SLICKRAILS_ALLOW_BYPASS*) ok "bash-guard: the message name
 
 # doctor: a fresh clone has no core.hooksPath (it is local git config) — that must be visible.
 new_repo doctor-src
+printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json   # a test command: an empty CHECK_TEST is a doctor problem of its own
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 git add -A && git commit -qm "install" --no-verify
 git clone -q "$WORK/doctor-src" "$WORK/doctor-clone"
@@ -1637,6 +1709,7 @@ DOC_OUT="$(CI=true sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
 
 # doctor self-test: installed is not working — the guard and pre-commit get a probe each and must answer right
 new_repo doctor-probe-repo
+printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json   # a test command: an empty CHECK_TEST is a doctor problem of its own
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 git config core.hooksPath .githooks
 DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?
@@ -1698,6 +1771,17 @@ printf '{"tool_name":"Edit","tool_input":{"file_path":"/r/.slickrails/bash-guard
 [ $? -eq 2 ] && ok "bash-guard without jq and node: an Edit on the guard script is still blocked" || fail "bash-guard without jq and node: an Edit on the guard script is still blocked"
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/r/src/app.ts"}}' | env PATH="$NOJQ_BASE" sh "$KIT_DIR/templates/bash-guard.sh" >/dev/null 2>&1
 [ $? -eq 0 ] && ok "bash-guard without jq and node: an Edit on ordinary code passes" || fail "bash-guard without jq and node: an Edit on ordinary code passes"
+# stack detection without node: the package.json scripts are read as text (SLI-190)
+new_repo stack-nonode-py
+printf '{"name":"t","devDependencies":{"prettier":"^3.0.0"}}' > package.json; printf 'requests\n' > requirements.txt; mkdir tests
+PATH="$NOJQ_BASE" sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+grep -q '^CHECK_TEST="python3 -m pytest -q"$' .slickrails/config.sh \
+  && ok "stack without node: a helper package.json next to requirements.txt is still Python" || fail "stack without node: a helper package.json next to requirements.txt is still Python ($(grep '^CHECK_TEST=' .slickrails/config.sh))"
+new_repo stack-nonode-yarn
+printf '{"name":"t","scripts":{"test":"jest"}}' > package.json; : > yarn.lock; printf 'requests\n' > requirements.txt
+PATH="$NOJQ_BASE" sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+grep -q '^CHECK_TEST="yarn run test"$' .slickrails/config.sh \
+  && ok "stack without node: a package.json test script is found as text (yarn run test)" || fail "stack without node: a package.json test script is found as text ($(grep '^CHECK_TEST=' .slickrails/config.sh))"
 # the package check without jq and node: the decoys must not win there either
 # (an outside review saw both fail once in an Ubuntu container: registry settings of the host are cleared here, and a
 # failure prints what the check said and which tools it found, so the next one can be told apart from a host quirk)
@@ -1860,6 +1944,7 @@ fi
 
 # doctor: Codex part ("installed", never "trusted")
 new_repo codex-doctor-repo
+printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json   # a test command: an empty CHECK_TEST is a doctor problem of its own
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 git config core.hooksPath .githooks
 DOC_OUT="$(sh "$KIT_DIR/install.sh" doctor 2>&1)"; DOC_RC=$?

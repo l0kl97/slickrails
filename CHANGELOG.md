@@ -15,6 +15,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   it, delete it); `init` adds `*.slickrails-new` to `.gitignore`, so `git add -A` leaves them out
 - `slickrails init` on an existing install ends with an update summary (replaced / kept / open) instead of the
   first-install steps
+- Stack detection: a Python repo with a `package.json` only for tooling (no `test` or `typecheck` script) is checked
+  as Python (`pytest`), no longer as a Node project whose checks run nothing. `requirements-dev.txt` and other
+  `requirements*.txt` count as Python too
+- The `packageManager` field in `package.json` decides the package manager, ahead of the lockfiles; several lockfiles
+  without it are warned about, with the choice named. Without node, `package.json` scripts are read as text
+- `slickrails doctor` reports an empty `CHECK_TEST` (and a `config.sh` without any check) as a problem with exit 1,
+  not as a warning
 
 ## [1.6.0] — 2026-11-12
 
