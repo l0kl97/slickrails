@@ -380,7 +380,8 @@ place() { # place <src> <dest>
   elif [ "$(awk -v d="$DEST" -v f="$FROM" '$2 == d && $3 == f { print $1 }' "$MANIFEST" 2>/dev/null)" = "$(git hash-object "$DEST")" ]; then
     cat "$SRC" > "$DEST"   # write through: keeps the file mode
     say "  ~ $DEST updated (it was unchanged since the last install)"; REPLACED=$((REPLACED + 1))
-  elif REL="$(awk -v h="$(git hash-object "$DEST")" -v f="$FROM" '$1 == h && $2 == f { print $3; exit }' "$RELEASES" 2>/dev/null)" && [ -n "$REL" ]; then
+  # (the list has CRLF line ends in a Windows checkout of the kit: the CR is not part of the release)
+  elif REL="$(awk -v h="$(git hash-object "$DEST")" -v f="$FROM" '{ sub(/\r$/, "") } $1 == h && $2 == f { print $3; exit }' "$RELEASES" 2>/dev/null)" && [ -n "$REL" ]; then
     cat "$SRC" > "$DEST"   # an install from before the manifest: still the unedited template of a release
     say "  ~ $DEST updated (it was the unchanged file of slickrails $REL)"; REPLACED=$((REPLACED + 1))
   else

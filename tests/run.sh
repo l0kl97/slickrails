@@ -218,6 +218,21 @@ else
       && ok "installer: an update from $OLD ends with its own summary (replaced / kept / open)" \
       || fail "installer: an update from $OLD ends with its own summary (replaced / kept / open)"
   done
+  # Windows (core.autocrlf=true): the kit's checkout and the project's files have CRLF line ends. An unedited file is
+  # still recognised (git hash-object hashes it as committed), and the release read from the list carries no CR
+  CRLF_KIT="$WORK/kit-crlf"; mkdir -p "$CRLF_KIT"
+  (cd "$KIT_DIR" && git ls-files | tar -cf - -T -) | tar -xf - -C "$CRLF_KIT"
+  awk '{ printf "%s\r\n", $0 }' "$KIT_DIR/templates/release-hashes" > "$CRLF_KIT/templates/release-hashes"
+  new_repo upgrade-crlf
+  git config core.autocrlf true
+  printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
+  sh "$WORK/kit-v1.4.0/install.sh" >/dev/null 2>&1
+  awk '{ printf "%s\r\n", $0 }' .slickrails/SLICKRAILS.md > crlf.tmp && mv crlf.tmp .slickrails/SLICKRAILS.md
+  UPG_OUT="$(sh "$CRLF_KIT/install.sh" 2>&1)"
+  [ ! -f .slickrails/SLICKRAILS.md.slickrails-new ] \
+    && case "$UPG_OUT" in *".slickrails/SLICKRAILS.md updated (it was the unchanged file of slickrails 1.4.0)"*) true;; *) false;; esac \
+    && ok "installer: on a CRLF checkout (Windows) an unedited file of 1.4.0 is replaced, and the release is named cleanly" \
+    || fail "installer: on a CRLF checkout (Windows) an unedited file of 1.4.0 is replaced, and the release is named cleanly"
   # an edited file from such an install is kept; without a manifest nobody knows who changed it, and the message says so
   new_repo upgrade-edited
   printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json
@@ -262,8 +277,10 @@ else
   cd "$WORK/upgrade-from-v1.5.0"
   case "$(sh "$KIT_DIR/install.sh" doctor 2>&1; sh "$KIT_DIR/scripts/status.sh" 2>&1)" in *"slickrails-new"*) false;; *) true;; esac \
     && ok "doctor/status: nothing said about .slickrails-new when there is none" || fail "doctor/status: nothing said about .slickrails-new when there is none"
-  # the shipped list is what the release tags hold: generated, never edited by hand
-  sh "$KIT_DIR/scripts/release-hashes.sh" 2>/dev/null | cmp -s - "$KIT_DIR/templates/release-hashes" \
+  # the shipped list is what the release tags hold: generated, never edited by hand (line ends aside: a Windows
+  # checkout of the kit has CRLF, the generator writes LF)
+  tr -d '\r' < "$KIT_DIR/templates/release-hashes" > "$WORK/release-hashes.lf"
+  sh "$KIT_DIR/scripts/release-hashes.sh" 2>/dev/null | cmp -s - "$WORK/release-hashes.lf" \
     && ok "templates/release-hashes is generated from the release tags (sh scripts/release-hashes.sh)" \
     || fail "templates/release-hashes is generated from the release tags — out of date: sh scripts/release-hashes.sh > templates/release-hashes"
 fi

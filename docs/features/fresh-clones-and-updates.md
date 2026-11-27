@@ -80,3 +80,10 @@ slickrails once never got a newer hook: `slickrails upgrade` only updated the ki
   differs counted as edited, and the manifest was written from the kit's templates, not from what is on disk. Fix:
   the released templates' hashes from the tags, per-file version, `.gitignore` entry, doctor/status count, update
   summary. Repro test first: install from the v1.4.0 and v1.5.0 tags, then init.
+- 2026-11-27: Windows (PR #15, CI on windows-latest red). Symptom: "templates/release-hashes … out of date" on
+  Windows only. Cause: Git for Windows checks out with `core.autocrlf=true`, so the list has CRLF and the byte compare
+  with the generator's LF output fails; the installer read the release as `1.4.0\r` and the update line came out
+  garbled. The hashes themselves were right: `git hash-object` hashes a CRLF file as committed (LF) under autocrlf,
+  so unedited files on a Windows checkout are still recognised. Fix: the installer drops the CR when it reads the
+  list, the freshness check compares without CR. Repro test first: a kit copy whose list has CRLF, an install whose
+  file has CRLF with `core.autocrlf=true`, then init.
