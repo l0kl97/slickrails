@@ -338,6 +338,76 @@ new_repo no-status-mod-repo
 sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 grep -q 'enabledPlugins' .claude/settings.json && fail "installer: no status mod without --status-mod" || ok "installer: no status mod without --status-mod"
 
+# ---- contract for tools that read slickrails (docs/guides/for-tools.md): config.sh ---------------------------------
+# slickfab reads CHECK_* from .slickrails/config.sh (as text, line by line) and the hooks source it with sh. Every
+# config.sh the installer writes, for every stack, must stay sourceable without output or side effects, and must
+# keep the three stable keys as plain KEY="literal" lines.
+config_contract() { # <config.sh>: prints why it breaks the contract, nothing when it holds
+  CC_CFG="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  CC_BOX="$WORK/contract-sandbox"; rm -rf "$CC_BOX"; mkdir -p "$CC_BOX"
+  # sourced the way the hooks do it, in an empty directory with an empty HOME: anything it prints or creates shows
+  CC_OUT="$(cd "$CC_BOX" && HOME="$CC_BOX" sh -c '. "$1"' contract "$CC_CFG" 2>&1)"; CC_RC=$?
+  [ "$CC_RC" -eq 0 ] || { echo "not sourceable with sh (exit $CC_RC)"; return 0; }
+  [ -z "$CC_OUT" ] || { echo "prints output when sourced: $(printf '%s' "$CC_OUT" | head -1)"; return 0; }
+  [ -z "$(ls -A "$CC_BOX")" ] || { echo "side effect: sourcing created $(ls -A "$CC_BOX" | head -1)"; return 0; }
+  for CC_K in CHECK_TYPECHECK CHECK_TEST CHECK_LINT_STAGED; do
+    grep -Eq "^[[:space:]]*$CC_K=" "$CC_CFG" || { echo "no $CC_K= line"; return 0; }
+  done
+  # text readers (slickfab) take the value as written: no expansion, no command substitution in CHECK_* lines
+  CC_EXP="$(grep -E '^[[:space:]]*CHECK_[A-Z_]+=' "$CC_CFG" | grep -E '[$`]' | head -1)"
+  [ -z "$CC_EXP" ] || echo "CHECK_ value is not literal: $CC_EXP"
+}
+CONTRACT_STACKS="generic npm pnpm yarn bun python swift go rust ruby jvm"
+contract_stack_files() { # <stack>: the files that make the installer pick this stack and its check commands
+  case "$1" in
+    generic) : ;;
+    npm)     printf '{"name":"t","scripts":{"test":"node -e 1","typecheck":"node -e 1"}}' > package.json ;;
+    pnpm)    printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json; touch pnpm-lock.yaml ;;
+    yarn)    printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json; touch yarn.lock ;;
+    bun)     printf '{"name":"t","scripts":{"test":"node -e 1"}}' > package.json; touch bun.lockb ;;
+    python)  touch requirements.txt; mkdir -p tests ;;
+    swift)   touch Package.swift ;;
+    go)      printf 'module example.com/t\n' > go.mod ;;
+    rust)    printf '[package]\nname = "t"\n' > Cargo.toml ;;
+    ruby)    touch Gemfile; mkdir -p spec ;;
+    jvm)     touch pom.xml ;;
+  esac
+}
+# the stacks' configs: each one generated once, then checked against the contract
+for CT_STACK in $CONTRACT_STACKS; do
+  new_repo "contract-$CT_STACK"
+  contract_stack_files "$CT_STACK"
+  sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+  CT_WHY="$(config_contract .slickrails/config.sh)"
+  [ -z "$CT_WHY" ] && ok "contract: config.sh of the $CT_STACK stack is sourceable, silent and has the stable keys" \
+    || fail "contract: config.sh of the $CT_STACK stack is sourceable, silent and has the stable keys ($CT_WHY)"
+done
+# the check itself catches what would break a reader (failure modes, so the loop above cannot pass vacuously)
+CT_BAD="$WORK/contract-bad.sh"
+contract_rejects() { # <description> <needle in the reason> <config content>
+  printf '%s\n' "$3" > "$CT_BAD"
+  CT_WHY="$(config_contract "$CT_BAD")"
+  case "$CT_WHY" in *"$2"*) ok "contract check: rejects $1";; *) fail "contract check: rejects $1 (got: '$CT_WHY')";; esac
+}
+CT_KEYS='CHECK_TYPECHECK="a"
+CHECK_TEST="b"
+CHECK_LINT_STAGED=""'
+contract_rejects "a config.sh that prints" "output" "$CT_KEYS
+echo hello"
+contract_rejects "a config.sh that writes a file" "side effect" "$CT_KEYS
+touch made-by-config"
+contract_rejects "a config.sh with a syntax error" "not sourceable" "$CT_KEYS
+if then"
+contract_rejects "a config.sh without CHECK_LINT_STAGED" "CHECK_LINT_STAGED" 'CHECK_TYPECHECK="a"
+CHECK_TEST="b"'
+contract_rejects "a key that only appears in a comment" "CHECK_TEST" 'CHECK_TYPECHECK="a"
+# CHECK_TEST="b"
+CHECK_LINT_STAGED=""'
+contract_rejects "a CHECK_ value that expands at read time" "literal" "$CT_KEYS
+CHECK_TEST=\"\$(whoami)\""
+printf '%s\n' "$CT_KEYS" > "$CT_BAD"
+[ -z "$(config_contract "$CT_BAD")" ] && ok "contract check: accepts a plain config.sh" || fail "contract check: accepts a plain config.sh ($(config_contract "$CT_BAD"))"
+
 # ------------------------------------------------------------------- CLI ----
 
 CLI_V="$(sh "$KIT_DIR/bin/slickrails" version 2>/dev/null || true)"

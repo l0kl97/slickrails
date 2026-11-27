@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Contract
+- New: [docs/guides/for-tools.md](docs/guides/for-tools.md) names what tools that read slickrails (first of them
+  slickfab) can rely on: `.slickrails/config.sh` (sourceable with `sh` without output or side effects, one literal
+  `KEY="value"` per line, the keys `CHECK_TYPECHECK`, `CHECK_TEST` and `CHECK_LINT_STAGED` always there),
+  `.githooks/` with `core.hooksPath`, `.slickrails/review-learnings.md` and the guardrail paths. These change only
+  with a major version, and every change to them is listed here under "Contract". `SLICKRAILS_EXTRA_PATH` and
+  `.slickrails/env.sh` join the contract when SLI-175 ships
+- `tests/run.sh` checks the `config.sh` the installer writes for every stack against that contract
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
