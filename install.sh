@@ -535,7 +535,21 @@ place "$KIT_DIR/templates/workflows/security.yml"      ".github/workflows/securi
 # The AI review runs locally before every push (ai-review.sh); the same review on GitHub is opt-in
 [ "$GITHUB_REVIEW" = "1" ] && place "$KIT_DIR/templates/workflows/claude-review.yml" ".github/workflows/claude-review.yml"
 place "$KIT_DIR/templates/workflows/pr-size.yml"       ".github/workflows/pr-size.yml"
-place "$KIT_DIR/templates/dependabot.yml"              ".github/dependabot.yml"
+# Dependabot only for the ecosystems this repo has (all in the root, where the entries look): an npm or pip entry with
+# nothing to check runs red on every schedule. Each combination is its own template, so place() keeps its rules.
+DEP_ECOS=""
+ls .github/workflows/* >/dev/null 2>&1 && DEP_ECOS="actions"
+for F in package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock bun.lockb bun.lock; do
+  [ -f "$F" ] && { DEP_ECOS="${DEP_ECOS:+$DEP_ECOS-}npm"; break; }
+done
+for F in requirements*.txt requirements*.in pyproject.toml Pipfile Pipfile.lock uv.lock poetry.lock; do
+  [ -f "$F" ] && { DEP_ECOS="${DEP_ECOS:+$DEP_ECOS-}pip"; break; }
+done
+case "$DEP_ECOS" in
+  "")              ;;   # nothing Dependabot could update
+  actions-npm-pip) place "$KIT_DIR/templates/dependabot.yml"              ".github/dependabot.yml";;
+  *)               place "$KIT_DIR/templates/dependabot/$DEP_ECOS.yml"    ".github/dependabot.yml";;
+esac
 if [ "$HAS_PLAYWRIGHT" = "1" ]; then
   place "$KIT_DIR/templates/workflows/smoke-playwright.yml" ".github/workflows/smoke.yml"
 elif [ "$STACK" = "node" ]; then

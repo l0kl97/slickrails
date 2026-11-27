@@ -136,6 +136,66 @@ sh "$KIT_DIR/install.sh" >/dev/null 2>&1
 [ ! -f .github/CODEOWNERS ] && [ "$(cat CODEOWNERS)" = "* @someone" ] \
   && ok "installer: an existing CODEOWNERS (repo root) is left alone, no second one" || fail "installer: an existing CODEOWNERS (repo root) is left alone, no second one"
 
+# Dependabot lists only the ecosystems the repo has: an npm or pip entry with nothing to check runs red on every
+# schedule (seen in slickfab, 2026-11-24). npm: package.json or a lockfile; pip: a Python dependency file;
+# github-actions: files in .github/workflows/ (which the install itself puts there). All looked up in the repo root.
+dep_ecos() { # the package-ecosystem entries of .github/dependabot.yml, space-separated in file order
+  grep -E '^[[:space:]]*- package-ecosystem:' .github/dependabot.yml 2>/dev/null | sed 's/.*package-ecosystem:[[:space:]]*//' | tr '\n' ' '
+}
+dep_case() { # dep_case <description> <expected entries> <file>...: a new repo with these (empty) files, then init
+  DC_DESC="$1"; DC_WANT="$2"; shift 2
+  new_repo dependabot-repo
+  for DC_F in "$@"; do mkdir -p "$(dirname "$DC_F")"; : > "$DC_F"; done
+  [ -f package.json ] && printf '{"name":"t"}' > package.json
+  sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+  DC_GOT="$(dep_ecos)"
+  [ "$DC_GOT" = "$DC_WANT" ] && ok "installer: dependabot.yml — $DC_DESC" || fail "installer: dependabot.yml — $DC_DESC (got: '$DC_GOT', wanted: '$DC_WANT')"
+}
+dep_case "a repo with only workflows gets github-actions only" "github-actions " .github/workflows/build.yml
+dep_case "a Node repo (package.json) gets npm, no pip" "github-actions npm " package.json
+dep_case "a pnpm lockfile alone counts as npm" "github-actions npm " pnpm-lock.yaml
+dep_case "a yarn lockfile alone counts as npm" "github-actions npm " yarn.lock
+dep_case "a bun lockfile alone counts as npm" "github-actions npm " bun.lock
+dep_case "a Python repo (pyproject.toml) gets pip, no npm" "github-actions pip " pyproject.toml
+dep_case "requirements-dev.txt counts as pip" "github-actions pip " requirements-dev.txt
+dep_case "a Pipfile counts as pip" "github-actions pip " Pipfile
+dep_case "uv.lock counts as pip" "github-actions pip " uv.lock
+dep_case "poetry.lock counts as pip" "github-actions pip " poetry.lock
+dep_case "a Node and Python repo gets both" "github-actions npm pip " package.json requirements.txt
+dep_case "a package.json or requirements.txt below the root does not count" "github-actions " web/package.json api/requirements.txt
+dep_case "a Go repo gets neither npm nor pip" "github-actions " go.mod
+# init again over the old file (every ecosystem, as earlier versions placed it, recorded in the manifest): the file
+# stays as it is, the fitting version lands next to it as .slickrails-new
+new_repo dependabot-old-repo
+: > go.mod
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+cp "$KIT_DIR/templates/dependabot.yml" .github/dependabot.yml
+grep -v ' \.github/dependabot\.yml ' .slickrails/manifest > "$WORK/dep-manifest"
+printf '%s .github/dependabot.yml templates/dependabot.yml\n' "$(git hash-object .github/dependabot.yml)" >> "$WORK/dep-manifest"
+cp "$WORK/dep-manifest" .slickrails/manifest
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+cmp -s "$KIT_DIR/templates/dependabot.yml" .github/dependabot.yml \
+  && ok "installer: init again leaves an old dependabot.yml (npm and pip without a need) unchanged" \
+  || fail "installer: init again leaves an old dependabot.yml (npm and pip without a need) unchanged"
+[ "$(grep -E '^[[:space:]]*- package-ecosystem:' .github/dependabot.yml.slickrails-new 2>/dev/null | sed 's/.*:[[:space:]]*//' | tr '\n' ' ')" = "github-actions " ] \
+  && ok "installer: ...and puts the fitting version (github-actions only) next to it as .slickrails-new" \
+  || fail "installer: ...and puts the fitting version (github-actions only) next to it as .slickrails-new"
+# an edited dependabot.yml is never touched either
+new_repo dependabot-edited-repo
+printf '{"name":"t"}' > package.json
+mkdir -p .github; printf 'version: 2\nupdates: []  # mine\n' > .github/dependabot.yml
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+[ "$(cat .github/dependabot.yml)" = "$(printf 'version: 2\nupdates: []  # mine')" ] && [ -f .github/dependabot.yml.slickrails-new ] \
+  && ok "installer: a dependabot.yml of the repo's own stays, the template goes next to it" \
+  || fail "installer: a dependabot.yml of the repo's own stays, the template goes next to it"
+# a repo that has every ecosystem keeps getting the full template: no .slickrails-new for an unchanged old file
+new_repo dependabot-full-repo
+printf '{"name":"t"}' > package.json; : > requirements.txt
+sh "$KIT_DIR/install.sh" >/dev/null 2>&1; sh "$KIT_DIR/install.sh" >/dev/null 2>&1
+cmp -s "$KIT_DIR/templates/dependabot.yml" .github/dependabot.yml && [ ! -f .github/dependabot.yml.slickrails-new ] \
+  && ok "installer: a Node and Python repo keeps the full dependabot.yml without a .slickrails-new" \
+  || fail "installer: a Node and Python repo keeps the full dependabot.yml without a .slickrails-new"
+
 # The setup check (CI): passes on a fresh install, fails when the guardrails are missing or check nothing
 sc() { # sc <expected-exit> <description> [ENV=value...]
   SC_WANT="$1"; SC_DESC="$2"; shift 2
@@ -2224,6 +2284,16 @@ if [ -n "$YAML_PARSE" ]; then
 else
   printf 'SKIP  workflow templates: no YAML parser (python3 with PyYAML, or ruby) — validity not checked\n'
 fi
+# Dependabot: every template variant is valid YAML and lists exactly the ecosystems its name says
+DEPV_BAD=""
+for V in "$KIT_DIR"/templates/dependabot/*.yml; do
+  DEPV_WANT="$(basename "$V" .yml | sed 's/actions/github-actions/' | tr '-' ' ' | sed 's/github actions/github-actions/') "
+  DEPV_GOT="$(grep -E '^[[:space:]]*- package-ecosystem:' "$V" | sed 's/.*:[[:space:]]*//' | tr '\n' ' ')"
+  [ "$DEPV_GOT" = "$DEPV_WANT" ] || DEPV_BAD="$DEPV_BAD $(basename "$V")"
+  if [ -n "$YAML_PARSE" ]; then eval "$YAML_PARSE \"\$V\"" >/dev/null 2>&1 || DEPV_BAD="$DEPV_BAD $(basename "$V"):yaml"; fi
+done
+[ -z "$DEPV_BAD" ] && ok "dependabot templates: each variant lists the ecosystems its name says, as valid YAML" \
+  || fail "dependabot templates: each variant lists the ecosystems its name says, as valid YAML (wrong:$DEPV_BAD)"
 
 # ---- the templates are as current as the kit's own workflows (which Dependabot keeps current) --------------------
 # (found 2026-11-12: the kit ran actions/checkout@v7, every template still shipped v4)

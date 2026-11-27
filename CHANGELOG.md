@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Fixed
+- `slickrails init` writes Dependabot entries only for the ecosystems the repo has: npm with a `package.json` or
+  a Node lockfile, pip with a Python dependency file, github-actions when `.github/workflows/` has files. Before, npm
+  and pip were always listed and ran red in repos without them. An existing `dependabot.yml` is not overwritten; the
+  fitting version lands next to it as `.slickrails-new`
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
