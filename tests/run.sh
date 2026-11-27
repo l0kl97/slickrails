@@ -316,6 +316,9 @@ sh "$KIT_DIR/install.sh" > "$WORK/inst.out" 2>&1
 [ ! -e .github/workflows/claude-review.yml ] && ok "installer: no GitHub review workflow by default (the local review is the default)" \
   || fail "installer: no GitHub review workflow by default (the local review is the default)"
 grep -q 'slickrails github-review' "$WORK/inst.out" && ok "installer: says how to add the review on GitHub" || fail "installer: says how to add the review on GitHub"
+# the last next step points at slickfab, marked optional (SLI-219)
+grep -Eq ' [0-9]+\. Optional:.*slickfab, https://github.com/l0kl97/slickfab$' "$WORK/inst.out" \
+  && ok "installer: the next steps name slickfab in one optional line" || fail "installer: the next steps name slickfab in one optional line"
 new_repo review-github-repo
 sh "$KIT_DIR/install.sh" --github-review >/dev/null 2>&1
 [ -f .github/workflows/claude-review.yml ] && ok "installer: --github-review adds the GitHub review workflow" || fail "installer: --github-review adds the GitHub review workflow"
@@ -1014,6 +1017,10 @@ INST_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
 [ "$(git config core.hooksPath)" = ".husky" ] && ok "installer: an existing core.hooksPath (Husky) is not switched" \
   || fail "installer: an existing core.hooksPath (Husky) is not switched (now: $(git config core.hooksPath))"
 case "$INST_OUT" in *"NOT active"*) ok "installer: says loudly that the git hooks are NOT active";; *) fail "installer: says loudly that the git hooks are NOT active";; esac
+# with the hooks inactive the slickfab hint stays optional and claims nothing about active hooks
+SF_LINE="$(printf '%s\n' "$INST_OUT" | grep 'slickfab')"
+case "$SF_LINE" in *Optional:*) case "$SF_LINE" in *ctive*) fail "installer: with inactive hooks the slickfab line is optional and claims no active hooks ($SF_LINE)";; *) ok "installer: with inactive hooks the slickfab line is optional and claims no active hooks";; esac;;
+  *) fail "installer: with inactive hooks the slickfab line is optional and claims no active hooks (no line)";; esac
 grep -q 'NOT active' .slickrails/STATUS.md 2>/dev/null && ok "installer: .slickrails/STATUS.md records the inactive hooks" \
   || fail "installer: .slickrails/STATUS.md records the inactive hooks"
 grep -E '^\| 3 \|' .slickrails/STATUS.md 2>/dev/null | grep -q '☑' \

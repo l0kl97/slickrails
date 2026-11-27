@@ -663,3 +663,4 @@ fi
 step "Claude Code / Codex ask once to trust the project hooks (Codex: /hooks); until then they are skipped."
 step "Fresh clones: git does not copy core.hooksPath. An agent's first tool call switches the hooks on;" \
      "by hand: git config core.hooksPath .githooks. Update this repo to a newer kit: slickrails upgrade, then slickrails init."
+step "Optional: a step-by-step process on top of these checks (spec, tickets, TDD, review): slickfab, https://github.com/l0kl97/slickfab"

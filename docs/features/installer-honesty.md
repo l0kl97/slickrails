@@ -78,3 +78,8 @@ active hooks (`core.hooksPath` is local git config) and nothing said so; and the
   a failing `gh` call looked like "nothing ran yet" and had no deadline → 30 s deadline, the failure is said.
 - 2026-11-12 (1.6.0): first real run of `slickrails protect` (on the kit repo) printed "no check named size" for a
   healthy setup: `size` only runs on pull requests, so a branch's own commits never carry it → not expected there.
+- 2026-11-27 (SLI-219): asked in the quickstart run of slickrails + slickfab: "slickfab recommends slickrails first,
+  but slickrails never mentions slickfab". `init` now ends its next steps with one line marked "Optional:" that
+  names slickfab and its link. It is the last step in every case, also when another hook manager keeps the hooks
+  inactive (there is no separate ending for that case; the warning before it stays), and it says nothing about
+  active hooks. Tests: the line in a plain repo and in the Husky repo. The README sentence belongs to SLI-186.

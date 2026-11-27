@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added
+- `slickrails init` ends its next steps with one optional line pointing at slickfab, a step-by-step process
+  (spec, tickets, TDD, review) on top of the checks in `.slickrails/config.sh`
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
