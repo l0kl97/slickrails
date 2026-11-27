@@ -223,6 +223,23 @@ printf '{"name":"t","packageManager":"deno@2.0.0","scripts":{"test":"vitest"}}' 
 PM_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
 case "$PM_OUT" in *'packageManager "deno"'*"ignored"*) ok "pm: an unknown packageManager is named and ignored";; *) fail "pm: an unknown packageManager is named and ignored";; esac
 [ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST="pnpm run --if-present test"' ] && ok "pm: ...the lockfile decides then" || fail "pm: ...the lockfile decides then (got $(cfg_line CHECK_TEST))"
+# an unknown packageManager next to several lockfiles: the lockfile warning does not claim the field is missing
+new_repo pm-field-unknown-two-locks
+printf '{"name":"t","packageManager":"deno@2","scripts":{"test":"vitest"}}' > package.json; : > yarn.lock; : > bun.lockb
+PM_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+case "$PM_OUT" in *"no packageManager"*) fail "pm: an unknown packageManager with several lockfiles is not called missing";;
+  *"several lockfiles (yarn.lock, bun.lockb)"*"no usable packageManager"*"using bun"*) ok "pm: an unknown packageManager with several lockfiles is not called missing";;
+  *) fail "pm: an unknown packageManager with several lockfiles is not called missing ($(printf '%s' "$PM_OUT" | grep -i lockfile))";; esac
+# yarn/bun with a typecheck but no test script: CHECK_TEST stays empty, and the installer says so like doctor does
+new_repo pm-yarn-typecheck-only
+printf '{"name":"t","scripts":{"typecheck":"tsc --noEmit"}}' > package.json; : > yarn.lock
+TO_OUT="$(sh "$KIT_DIR/install.sh" 2>&1)"
+[ "$(cfg_line CHECK_TYPECHECK)" = 'CHECK_TYPECHECK="yarn run typecheck"' ] && [ "$(cfg_line CHECK_TEST)" = 'CHECK_TEST=""' ] \
+  && ok "pm: yarn with only a typecheck script gets the typecheck and an empty CHECK_TEST" \
+  || fail "pm: yarn with only a typecheck script gets the typecheck and an empty CHECK_TEST (got $(cfg_line CHECK_TEST))"
+case "$TO_OUT" in *"CHECK_TEST"*"empty"*"checks nothing"*) ok "installer: an empty CHECK_TEST next to a typecheck is warned about at once";;
+  *) fail "installer: an empty CHECK_TEST next to a typecheck is warned about at once";; esac
+case "$(sh "$KIT_DIR/install.sh" doctor 2>&1)" in *"PROBLEM  CHECK_TEST"*) ok "doctor: ...and names the same problem afterwards";; *) fail "doctor: ...and names the same problem afterwards";; esac
 # an existing config.sh is never rewritten, even when the detection would now choose differently
 cd "$WORK/stack-py-helper-pkg"
 printf 'CHECK_TEST="npm run my-own"\n' > .slickrails/config.sh; cp .slickrails/config.sh "$WORK/own-config"

@@ -26,7 +26,9 @@ install, and was green from then on.
   first guess that lands in an editable `config.sh`.
 - **`doctor`: an empty `CHECK_TEST` is a PROBLEM** (exit 1), also when `CHECK_TYPECHECK` or `CHECK_SESSION` is set —
   every hook passes while no test runs. A `config.sh` without any check is a PROBLEM too (was a WARN). The CI setup
-  check (`templates/setup-check.sh`) is unchanged: it still accepts a typecheck alone.
+  check (`templates/setup-check.sh`) is unchanged: it still accepts a typecheck alone. The installer warns with the
+  same words when it writes a `config.sh` with a typecheck but an empty `CHECK_TEST` (yarn/bun without a `test`
+  script), so install and `doctor` do not disagree.
 - **`config.sh` is never overwritten** (as before): the new detection only applies to new installs; `doctor` is how
   existing repos learn about an empty `CHECK_TEST`.
 
@@ -55,7 +57,14 @@ install, and was green from then on.
   (then the lockfiles decide).
 - A Python repo without `tests/` still gets an empty `CHECK_TEST` at install (pytest would fail with "no tests
   ran"); the installer warns and `doctor` now keeps reporting it.
+- npm/pnpm always get `npm test --if-present` / `pnpm run --if-present test`, also without a `test` script. That
+  checks nothing just as silently, but `doctor` says `ok` (the variable is set). Not part of SLI-190.
 
 ## History
 - 2026-11-27: created (SLI-190): Python with a helper `package.json`, `packageManager` first, lockfile warning,
   `has_script` without node, `doctor` reports an empty `CHECK_TEST` as a problem.
+- 2026-11-27: review of PR #16. Symptom: a yarn repo with only a typecheck got `CHECK_TEST=""` and no word from the
+  installer, while `doctor` right after reported a PROBLEM; with an unknown `packageManager` and several lockfiles the
+  lockfile warning said "no packageManager". Cause: the installer only warned when both checks were empty; the
+  warning text ignored `PM_FIELD`. Fix: the installer warns about an empty `CHECK_TEST` next to a typecheck in
+  doctor's words, the lockfile warning says "no usable packageManager" when the field is set but unknown; a test each.

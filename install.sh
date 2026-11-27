@@ -377,7 +377,7 @@ if [ "$STACK" = "node" ]; then
     *)
       [ -n "$PM_FIELD" ] && warn "packageManager \"$PM_FIELD\" in package.json is not npm, pnpm, yarn or bun — ignored"
       case "$LOCKS" in
-        *" "*" "*) warn "several lockfiles ($(printf '%s' "${LOCKS# }" | sed 's/ /, /g')) and no packageManager in package.json — using $PM. Set packageManager (e.g. \"$PM@<version>\") to choose.";;
+        *" "*" "*) warn "several lockfiles ($(printf '%s' "${LOCKS# }" | sed 's/ /, /g')) and no ${PM_FIELD:+usable }packageManager in package.json — using $PM. Set packageManager (e.g. \"$PM@<version>\") to choose.";;
         *) say "Package manager: $PM";;
       esac;;
   esac
@@ -555,6 +555,9 @@ EOF
   if [ -z "$CHECK_TYPECHECK" ] && [ -z "$CHECK_TEST" ]; then
     warn "no test or typecheck command found for this $STACK project — .slickrails/config.sh checks nothing, so every hook passes."
     warn "Set CHECK_TEST (and CHECK_TYPECHECK) there. Until then the 'slickrails setup' step in CI fails (repository variable SLICKRAILS_SETUP_CHECK=warn reports only)."
+  elif [ -z "$CHECK_TEST" ]; then
+    # a typecheck alone (a yarn/bun project without a test script, …): same words as doctor, which reports it as a problem
+    warn "CHECK_TEST in .slickrails/config.sh is empty — it checks nothing, no test runs in the hooks or in CI. Set it to the project's test command (slickrails doctor reports this as a problem)."
   fi
 fi
 
