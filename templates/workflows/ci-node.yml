@@ -1,6 +1,6 @@
 # slickrails: CI for Node/TypeScript projects
-# Detects the package manager by lockfile (npm/pnpm/yarn/bun) and runs lint and build if package.json defines
-# them, and between the two the checks from .slickrails/config.sh (typecheck, tests).
+# Picks the package manager like init (packageManager in package.json, else the lockfile; npm/pnpm/yarn/bun) and runs
+# lint and build if package.json defines them, and between the two the checks from .slickrails/config.sh (typecheck, tests).
 name: CI
 
 on:
@@ -26,13 +26,23 @@ jobs:
           SLICKRAILS_SETUP_CHECK: ${{ vars.SLICKRAILS_SETUP_CHECK }}
         run: sh .slickrails/setup-check.sh
 
+      # The same rule as `slickrails init` (install.sh), so the local hooks and CI use one package manager:
+      # the packageManager field of package.json ("pnpm@10.32.1") decides when it names npm, pnpm, yarn or bun;
+      # otherwise the lockfile (bun before yarn before pnpm), npm is the fallback.
       - name: Detect package manager
         id: pm
         run: |
-          if [ -f pnpm-lock.yaml ]; then echo "pm=pnpm" >> "$GITHUB_OUTPUT"
-          elif [ -f yarn.lock ]; then echo "pm=yarn" >> "$GITHUB_OUTPUT"
-          elif [ -f bun.lockb ] || [ -f bun.lock ]; then echo "pm=bun" >> "$GITHUB_OUTPUT"
-          else echo "pm=npm" >> "$GITHUB_OUTPUT"; fi
+          PM="npm"
+          [ -f pnpm-lock.yaml ] && PM="pnpm"
+          [ -f yarn.lock ] && PM="yarn"
+          if [ -f bun.lockb ] || [ -f bun.lock ]; then PM="bun"; fi
+          PM_FIELD="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"@]*\).*/\1/p' package.json 2>/dev/null | head -1)"
+          case "$PM_FIELD" in
+            npm|pnpm|yarn|bun) PM="$PM_FIELD"; echo "Package manager: $PM (packageManager in package.json)";;
+            "") echo "Package manager: $PM (lockfile)";;
+            *) echo "Package manager: $PM (lockfile; packageManager \"$PM_FIELD\" is not npm, pnpm, yarn or bun, ignored)";;
+          esac
+          echo "pm=$PM" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v7
         with:

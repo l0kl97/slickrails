@@ -29,6 +29,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   projects with only a typecheck, Python without `tests/`, Swift with only an `.xcodeproj`, Ruby without
   `spec/`/`test/`. Hooks and CI do not run `doctor`; `bootstrap.sh` does and stops after it in such a repo, until
   `CHECK_TEST` is set
+- The Node CI template (`ci-node.yml`) picks the package manager like `slickrails init`: the `packageManager` field
+  in `package.json` first (npm, pnpm, yarn or bun; any other value is ignored), then the lockfiles in init's order
+  (bun before yarn before pnpm), else npm. It went by lockfile only, pnpm first, so with several lockfiles the
+  local hooks and CI could run different package managers
 
 ## [1.6.0] — 2026-11-12
 
