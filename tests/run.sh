@@ -468,6 +468,40 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   [ "$(sh "$WORK/boot-bin2/slickrails" version 2>/dev/null)" = "$(cat "$KIT_DIR/VERSION")" ] \
     && ok "bootstrap: where ln -s copies (Git Bash), the command still finds the kit" \
     || fail "bootstrap: where ln -s copies (Git Bash), the command still finds the kit"
+  # bootstrap run inside a project whose installation doctor finds problems (no core.hooksPath, no hooks): the kit
+  # is installed all the same, so the install succeeds, shows doctor's findings and ends with a hint to them
+  rm -rf "$WORK/boot-proj"; mkdir -p "$WORK/boot-proj/.slickrails"; git -C "$WORK/boot-proj" init -q
+  printf 'CHECK_TEST=""\n' > "$WORK/boot-proj/.slickrails/config.sh"
+  BD_OUT="$(cd "$WORK/boot-proj" && CI='' SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$BOOT_HOME" \
+    SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" 2>&1)"
+  BD_RC=$?
+  [ "$BD_RC" -eq 0 ] && printf '%s\n' "$BD_OUT" | grep -q 'PROBLEM  core.hooksPath is not set' \
+    && printf '%s\n' "$BD_OUT" | grep -q "slickrails: done" \
+    && printf '%s\n' "$BD_OUT" | tail -n 3 | grep -qi 'problem' \
+    && ok "bootstrap: a red doctor in the current project still ends the install with exit 0 and points to the problems" \
+    || fail "bootstrap: a red doctor in the current project still ends the install with exit 0 and points to the problems (exit $BD_RC)"
+  # outside a project doctor is green: the closing line does not talk about problems
+  BG_OUT="$(cd "$WORK" && SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$BOOT_HOME" SLICKRAILS_BIN="$BOOT_BIN" \
+    sh "$KIT_DIR/bootstrap.sh" 2>&1)"
+  BG_RC=$?
+  [ "$BG_RC" -eq 0 ] && printf '%s\n' "$BG_OUT" | grep -q "slickrails: done" \
+    && ! printf '%s\n' "$BG_OUT" | tail -n 3 | grep -qi 'problem' \
+    && ok "bootstrap: a green doctor ends with the plain closing line" \
+    || fail "bootstrap: a green doctor ends with the plain closing line (exit $BG_RC)"
+  # a real install failure still fails: a clone that cannot be made, a command that cannot be linked
+  BF_OUT="$(cd "$WORK" && SLICKRAILS_REPO="$WORK/no-such-repo" SLICKRAILS_HOME="$WORK/boot-noclone" \
+    SLICKRAILS_BIN="$BOOT_BIN" sh "$KIT_DIR/bootstrap.sh" 2>&1)"
+  BF_RC=$?
+  [ "$BF_RC" -ne 0 ] && ! printf '%s\n' "$BF_OUT" | grep -q "slickrails: done" && [ ! -e "$WORK/boot-noclone" ] \
+    && ok "bootstrap: a failed clone ends with an error, not with the closing line" \
+    || fail "bootstrap: a failed clone ends with an error, not with the closing line (exit $BF_RC)"
+  : > "$WORK/boot-notadir"
+  BL_OUT="$(cd "$WORK" && SLICKRAILS_REPO="$KIT_DIR" SLICKRAILS_HOME="$BOOT_HOME" SLICKRAILS_BIN="$WORK/boot-notadir/bin" \
+    HOME="$WORK/boot-notadir" sh "$KIT_DIR/bootstrap.sh" 2>&1)"
+  BL_RC=$?
+  [ "$BL_RC" -ne 0 ] && ! printf '%s\n' "$BL_OUT" | grep -q "slickrails: done" \
+    && ok "bootstrap: a command that cannot be linked ends with an error, not with the closing line" \
+    || fail "bootstrap: a command that cannot be linked ends with an error, not with the closing line (exit $BL_RC)"
 else
   # the test clones the kit; a plain copy (e.g. extracted from `git archive`) has nothing to clone
   printf 'SKIP  bootstrap: the kit is not a git checkout (the test clones it)\n'

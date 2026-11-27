@@ -65,6 +65,14 @@ case ":$PATH:" in
 esac
 
 echo ""
-sh "$DEST/install.sh" doctor
+# The kit and the command are in place at this point. doctor also checks the project it is run in; a problem there
+# (exit 1) is that project's, not a failed install, so it is shown and named but does not fail the install.
+DOCTOR_RC=0
+sh "$DEST/install.sh" doctor || DOCTOR_RC=$?
 echo ""
-echo "slickrails: done. Next: cd into a project and run 'slickrails init'."
+if [ "$DOCTOR_RC" -eq 0 ]; then
+  echo "slickrails: done. Next: cd into a project and run 'slickrails init'."
+else
+  echo "slickrails: done — the kit is installed. The check above found problems in the current project (the PROBLEM"
+  echo "slickrails: lines); fix them or run 'slickrails init' there. Next: cd into a project and run 'slickrails init'."
+fi
