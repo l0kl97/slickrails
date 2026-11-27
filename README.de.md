@@ -151,7 +151,7 @@ ohne Daemon, TUI und Agent-Pipeline. Geschützt sind nur Pushes über
 | `.github/CODEOWNERS` | Vorlage für sensible Pfade, auskommentiert; greift mit `CODEOWNER_REVIEWS=1 slickrails protect` |
 | `.github/workflows/claude-review.yml` | Optional (`slickrails github-review`): dasselbe AI-Review serverseitig auf jedem PR (braucht die Claude-GitHub-App und `CLAUDE_CODE_OAUTH_TOKEN` oder `ANTHROPIC_API_KEY`) |
 | `.github/workflows/pr-size.yml` | PR-Größen-Wache: mehr als ~800 Zeilen blocken (Label `size-ok` als Ausnahme) |
-| `.github/dependabot.yml` | Wöchentliche Dependency-Updates |
+| `.github/dependabot.yml` | Wöchentliche Dependency-Updates (nur für die Ökosysteme, die im Repo sind) |
 | `CLAUDE.md` + `AGENTS.md` (Block) | Verbindliche Regeln für jede AI-Session im Repo |
 
 <p align="center">

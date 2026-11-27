@@ -1,0 +1,13 @@
+# slickrails: Dependabot (rule 7) — lands in .github/dependabot.yml
+# Only the ecosystems found in this repo; the full set is templates/dependabot.yml.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
