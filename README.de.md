@@ -1,9 +1,13 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/header.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/header-light.png">
+  <img src="assets/header.png" alt="slickrails: Guardrails für AI-gebaute Codebasen" width="100%">
+</picture>
+
 <p align="center">
   <a href="assets/slickrails-trailer.mp4"><img src="assets/slickrails-trailer.jpg" alt="slickrails-Trailer: dein AI-Agent sagt, er ist fertig, slickrails prüft" width="100%"></a>
   <br><sub><a href="assets/slickrails-trailer.mp4">▶ Trailer ansehen (20 s)</a></sub>
 </p>
-
-# slickrails
 
 > English (primary): [README.md](README.md) · Deutsches Regelwerk: [SLICKRAILS.de.md](SLICKRAILS.de.md)
 

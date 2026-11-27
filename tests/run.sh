@@ -2315,6 +2315,74 @@ else
   printf 'SKIP  hygiene: the kit is not a git checkout\n'
 fi
 
+# ---- the public face: brand header, social preview, README media outside the tool --------------------------------
+# (the README opened with the trailer and a text heading; the brand header existed in assets/ but nothing used it)
+# <readme>: prints what is wrong with its head, nothing when it opens with the brand header and the trailer follows
+readme_head_problem() {
+  RH_FIRST="$(grep -m1 . "$1" | tr -d '[:space:]')"
+  [ "$RH_FIRST" = "<picture>" ] || { echo "does not open with <picture> (first line: $RH_FIRST)"; return; }
+  RH_END="$(grep -n -m1 '</picture>' "$1" | cut -d: -f1)"
+  [ -n "$RH_END" ] || { echo "<picture> is never closed"; return; }
+  RH_PIC="$(sed -n "1,${RH_END}p" "$1")"
+  case "$RH_PIC" in *'media="(prefers-color-scheme: dark)" srcset="assets/header.png"'*) ;; *) echo "no dark source assets/header.png"; return;; esac
+  case "$RH_PIC" in *'media="(prefers-color-scheme: light)" srcset="assets/header-light.png"'*) ;; *) echo "no light source assets/header-light.png"; return;; esac
+  printf '%s\n' "$RH_PIC" | grep -q '<img [^>]*src="assets/header[^"]*"[^>]*alt="[^"][^"]*"' || { echo "no fallback <img> with alt text"; return; }
+  RH_TRAILER="$(grep -n -m1 'slickrails-trailer\.jpg' "$1" | cut -d: -f1)"
+  [ -n "$RH_TRAILER" ] && [ "$RH_TRAILER" -gt "$RH_END" ] || { echo "the trailer does not follow the header"; return; }
+  # only the trailer's own <p> may stand between header and trailer: no heading, no text, no other image
+  sed -n "$((RH_END + 1)),$((RH_TRAILER - 1))p" "$1" | grep -v '^[[:space:]]*$' | grep -qv '^<p align="center">$' \
+    && echo "something stands between header and trailer"
+}
+# <readme> <base dir>: prints each local media path the README references that is missing or lies outside assets/, demo/
+readme_media_problems() {
+  grep -oE '(src|srcset|href)="[^"]+\.(png|jpe?g|gif|svg|mp4|webp)"' "$1" | sed 's/^[a-z]*="//; s/"$//' | grep -v '^https\?:' |
+    while IFS= read -r RM; do
+      case "$RM" in assets/*|demo/*) ;; *) echo "outside assets/ and demo/: $RM"; continue;; esac
+      [ -f "$2/$RM" ] || echo "missing: $RM"
+    done
+}
+# <file>: "<width>x<height>" of a PNG, "not-png" otherwise
+png_size() {
+  [ "$(od -An -tu1 -N8 "$1" 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')" = "137 80 78 71 13 10 26 10" ] || { echo not-png; return; }
+  od -An -tu1 -j16 -N8 "$1" | awk 'NF { printf "%dx%d\n", $1*16777216+$2*65536+$3*256+$4, $5*16777216+$6*65536+$7*256+$8 }'
+}
+
+for F in README.md README.de.md; do
+  RHP="$(readme_head_problem "$KIT_DIR/$F")"
+  [ -z "$RHP" ] && ok "$F: opens with the brand header (dark + light), the trailer right below" \
+    || fail "$F: opens with the brand header (dark + light), the trailer right below ($RHP)"
+  RMP="$(readme_media_problems "$KIT_DIR/$F" "$KIT_DIR")"
+  [ -z "$RMP" ] && ok "$F: every image and video it shows exists and lies in assets/ or demo/ (outside the installed kit)" \
+    || fail "$F: every image and video it shows exists and lies in assets/ or demo/ ($(printf '%s' "$RMP" | head -3 | tr '\n' ' '))"
+done
+[ "$(png_size "$KIT_DIR/assets/header.png")" = "$(png_size "$KIT_DIR/assets/header-light.png")" ] \
+  && ok "header: the light variant has the size of the dark one ($(png_size "$KIT_DIR/assets/header.png"))" \
+  || fail "header: the light variant has the size of the dark one ($(png_size "$KIT_DIR/assets/header.png") vs $(png_size "$KIT_DIR/assets/header-light.png"))"
+# GitHub's social preview: 1280×640 recommended, at most 1 MB
+SP="$KIT_DIR/assets/social-preview.png"
+SP_BYTES="$(wc -c "$SP" 2>/dev/null | awk '{ print $1 }')"
+[ "$(png_size "$SP")" = "1280x640" ] && [ "${SP_BYTES:-0}" -lt 1000000 ] \
+  && ok "social preview: assets/social-preview.png is a 1280x640 PNG under 1 MB" \
+  || fail "social preview: assets/social-preview.png is a 1280x640 PNG under 1 MB ($(png_size "$SP"), ${SP_BYTES:-no file})"
+
+# the checks themselves catch a broken head, a missing file, a wrong size (else they could pass on anything)
+mkdir -p "$WORK/readme-fx/assets"
+RFX="$WORK/readme-fx"
+grep -v 'prefers-color-scheme: light' "$KIT_DIR/README.md" > "$RFX/no-light.md"
+{ printf '<p align="center">\n  <img src="assets/slickrails-trailer.jpg" alt="t">\n</p>\n\n'; cat "$KIT_DIR/README.md"; } > "$RFX/trailer-first.md"
+awk '/<\/picture>/ && !d { print; print ""; print "# slickrails"; d=1; next } { print }' "$KIT_DIR/README.md" > "$RFX/heading-between.md"
+printf '<img src="assets/gone.png" alt="x">\n<img src="docs/shot.png" alt="y">\n' > "$RFX/media.md"; mkdir -p "$RFX/docs"; : > "$RFX/docs/shot.png"
+case "$(readme_head_problem "$RFX/no-light.md")" in *"no light source"*) RFX_OK=1;; *) RFX_OK=0;; esac
+case "$(readme_head_problem "$RFX/trailer-first.md")" in *"does not open with <picture>"*) ;; *) RFX_OK=0;; esac
+case "$(readme_head_problem "$RFX/heading-between.md")" in *"stands between"*) ;; *) RFX_OK=0;; esac
+RFX_MEDIA="$(readme_media_problems "$RFX/media.md" "$RFX")"
+case "$RFX_MEDIA" in *"missing: assets/gone.png"*"outside assets/ and demo/: docs/shot.png"*) ;; *) RFX_OK=0;; esac
+printf '\211PNG\r\n\032\n\0\0\0\rIHDR\0\0\5\0\0\0\2\320' > "$RFX/wide.png"    # 1280x720
+printf 'GIF89a not a png at all' > "$RFX/fake.png"
+[ "$(png_size "$RFX/wide.png")" = "1280x720" ] && [ "$(png_size "$RFX/fake.png")" = "not-png" ] || RFX_OK=0
+[ "$RFX_OK" -eq 1 ] && ok "README checks catch a missing light header, the trailer on top, a heading in between, missing or misplaced media, a wrong PNG size" \
+  || fail "README checks catch a missing light header, the trailer on top, a heading in between, missing or misplaced media, a wrong PNG size"
+
 # --------------------------------------------- benchmark host check (stubs) ----
 # tests/benchmark/host/claude-stop-timeout.sh must not call a failed measurement a confirmation.
 # Offline: a stub `claude` decides what the "CLI" does; the real-host run stays behind BENCH_AI.
