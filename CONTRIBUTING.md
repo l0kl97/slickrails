@@ -19,6 +19,10 @@ the PR so a maintainer can.
    explaining *why* and *what*.
 3. Keep PRs small (rule 12 applies to us too: < ~800 changed lines).
 4. Shell code is POSIX `sh` — no bashisms. `shellcheck` runs in CI.
+5. Other tools rely on parts of slickrails (`.slickrails/config.sh`, `.githooks/`,
+   review learnings): [docs/guides/for-tools.md](docs/guides/for-tools.md). A change
+   to anything listed there as stable needs a major version and a CHANGELOG entry
+   under "Contract".
 
 ## What makes a good contribution
 
