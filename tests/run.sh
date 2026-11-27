@@ -2464,7 +2464,7 @@ ci_pm() { # ci_pm -> the package manager the template's step picks in the curren
   : > "$WORK/ci-pm-out"; GITHUB_OUTPUT="$WORK/ci-pm-out" bash -e "$WORK/ci-pm-step.sh" >/dev/null 2>&1 || { echo "step-failed"; return 0; }
   sed -n 's/^pm=//p' "$WORK/ci-pm-out" | tail -1
 }
-# <fixture name>|<package.json>|<lockfiles>|<expected pm> — expected values from the rule in docs/features/stack-detection.md
+# <fixture name>|<package.json>|<lockfiles>|<expected pm> — expected values from the rule in docs/features/ci-node-package-manager.md
 PM_FIXTURES='repro-bun-field|{"name":"t","packageManager":"bun@1.2.0"}|pnpm-lock.yaml bun.lockb|bun
 pnpm-field-over-bun|{"name":"t","packageManager":"pnpm@10.32.1"}|pnpm-lock.yaml bun.lockb|pnpm
 npm-field-over-bun|{"name":"t","packageManager":"npm@10.9.0"}|bun.lockb|npm

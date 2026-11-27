@@ -34,6 +34,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   (bun before yarn before pnpm), else npm. It went by lockfile only, pnpm first, so with several lockfiles the
   local hooks and CI could run different package managers
 
+### Changed
+- With several lockfiles and no `packageManager` field, the Node CI template now takes bun before yarn before pnpm
+  (it took pnpm first). Upgrade note: a repo with `pnpm-lock.yaml` and a leftover `bun.lockb` or `yarn.lock` gets
+  `bun install --frozen-lockfile` (or yarn) in CI after `slickrails upgrade` and `slickrails init`, and that run can
+  fail. Delete the stale lockfile, or set `packageManager` (e.g. `"pnpm@10.0.0"`) in `package.json`
+
 ## [1.6.0] — 2026-11-12
 
 From a scan of the kit after 1.5.0 ("what can we improve, where are the gaps"), with evidence from releasing 1.5.0
