@@ -208,10 +208,15 @@ while [ $# -gt 0 ]; do
         if ! sh -n "$DOC_CFG" 2>/dev/null; then
           say "  PROBLEM  .slickrails/config.sh has a syntax error — the hooks cannot read it"
           PROBLEMS=1
-        elif grep -Eq "^[[:space:]]*(CHECK_TYPECHECK|CHECK_TEST|CHECK_SESSION)=(\"[^\"]+\"|'[^']+'|[^\"'[:space:]#]+)" "$DOC_CFG"; then
+        elif grep -Eq "^[[:space:]]*CHECK_TEST=(\"[^\"]+\"|'[^']+'|[^\"'[:space:]#]+)" "$DOC_CFG"; then
           say "  ok       .slickrails/config.sh defines checks"
+        elif grep -Eq "^[[:space:]]*(CHECK_TYPECHECK|CHECK_SESSION)=(\"[^\"]+\"|'[^']+'|[^\"'[:space:]#]+)" "$DOC_CFG"; then
+          # every hook passes while no test runs: said each time doctor runs, not only once at the install
+          say "  PROBLEM  CHECK_TEST in .slickrails/config.sh is empty — it checks nothing, no test runs in the hooks or in CI. Set it to the project's test command"
+          PROBLEMS=1
         else
-          say "  WARN     no checks configured in .slickrails/config.sh (CHECK_TYPECHECK/CHECK_TEST/CHECK_SESSION are empty) — nothing is checked, and the setup check in CI fails"
+          say "  PROBLEM  no checks configured in .slickrails/config.sh (CHECK_TYPECHECK/CHECK_TEST/CHECK_SESSION are empty) — nothing is checked, and the setup check in CI fails"
+          PROBLEMS=1
         fi
         # an older config.sh (never overwritten) may predate the local review; say so when a reviewer CLI is here
         if ! grep -Eq '^[[:space:]]*CHECK_PREPUSH_REVIEW=("1"|'"'"'1'"'"'|1)' "$DOC_CFG"; then
@@ -330,28 +335,53 @@ fi
 say "Installing slickrails into: $TARGET (lang: $LANG_CODE)"
 
 # --------------------------------------------------------- stack detection --
+# Does package.json define a given script? node reads it; without node a text match (the choice lands in config.sh,
+# which the user can edit).
+has_script() { # has_script <name>
+  if command -v node >/dev/null 2>&1; then
+    node -e "p=require('./package.json');process.exit(p.scripts&&p.scripts['$1']?0:1)" 2>/dev/null
+  else
+    grep -Eq "\"$1\"[[:space:]]*:" package.json 2>/dev/null
+  fi
+}
+
 STACK="generic"
-[ -f pyproject.toml ] || [ -f requirements.txt ] && STACK="python"
+{ [ -f pyproject.toml ] || ls requirements*.txt >/dev/null 2>&1; } && STACK="python"
 [ -f Package.swift ] && STACK="swift"
 ls ./*.xcodeproj >/dev/null 2>&1 && STACK="swift"
 [ -f go.mod ] && STACK="go"
 [ -f Cargo.toml ] && STACK="rust"
 [ -f Gemfile ] && STACK="ruby"
 if [ -f pom.xml ] || [ -f build.gradle ] || [ -f build.gradle.kts ]; then STACK="jvm"; fi
-[ -f package.json ] && STACK="node"
+# A package.json wins, unless it is a Python repo's helper (Prettier, a linter): no test and no typecheck script.
+if [ -f package.json ]; then
+  if [ "$STACK" = "python" ] && ! has_script test && ! has_script typecheck; then
+    say "package.json has no test or typecheck script — checked as a Python project"
+  else
+    STACK="node"
+  fi
+fi
 say "Detected stack: $STACK"
 
-# Node package manager (by lockfile; npm is the fallback)
-PM="npm"
-[ -f pnpm-lock.yaml ] && PM="pnpm"
-[ -f yarn.lock ] && PM="yarn"
-if [ -f bun.lockb ] || [ -f bun.lock ]; then PM="bun"; fi
-[ "$STACK" = "node" ] && say "Package manager: $PM"
-
-# Does package.json define a given script? (used for PMs without --if-present)
-has_script() { # has_script <name>
-  node -e "p=require('./package.json');process.exit(p.scripts&&p.scripts['$1']?0:1)" 2>/dev/null
-}
+# Node package manager: the packageManager field of package.json ("pnpm@10.32.1", what Corepack reads) decides;
+# without it the lockfile (bun before yarn before pnpm), npm is the fallback.
+PM="npm"; LOCKS=""
+[ -f package-lock.json ] && LOCKS="$LOCKS package-lock.json"
+[ -f pnpm-lock.yaml ] && { PM="pnpm"; LOCKS="$LOCKS pnpm-lock.yaml"; }
+[ -f yarn.lock ] && { PM="yarn"; LOCKS="$LOCKS yarn.lock"; }
+for L in bun.lockb bun.lock; do [ -f "$L" ] && { PM="bun"; LOCKS="$LOCKS $L"; }; done
+PM_FIELD="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"@]*\).*/\1/p' package.json 2>/dev/null | head -1)"
+if [ "$STACK" = "node" ]; then
+  case "$PM_FIELD" in
+    npm|pnpm|yarn|bun) PM="$PM_FIELD"; say "Package manager: $PM (packageManager in package.json)";;
+    *)
+      [ -n "$PM_FIELD" ] && warn "packageManager \"$PM_FIELD\" in package.json is not npm, pnpm, yarn or bun — ignored"
+      case "$LOCKS" in
+        *" "*" "*) warn "several lockfiles ($(printf '%s' "${LOCKS# }" | sed 's/ /, /g')) and no ${PM_FIELD:+usable }packageManager in package.json — using $PM. Set packageManager (e.g. \"$PM@<version>\") to choose.";;
+        *) say "Package manager: $PM";;
+      esac;;
+  esac
+fi
 
 HAS_PLAYWRIGHT=0
 if [ -f package.json ] && grep -q '"@playwright/test"' package.json 2>/dev/null; then
@@ -525,6 +555,9 @@ EOF
   if [ -z "$CHECK_TYPECHECK" ] && [ -z "$CHECK_TEST" ]; then
     warn "no test or typecheck command found for this $STACK project — .slickrails/config.sh checks nothing, so every hook passes."
     warn "Set CHECK_TEST (and CHECK_TYPECHECK) there. Until then the 'slickrails setup' step in CI fails (repository variable SLICKRAILS_SETUP_CHECK=warn reports only)."
+  elif [ -z "$CHECK_TEST" ]; then
+    # a typecheck alone (a yarn/bun project without a test script, …): same words as doctor, which reports it as a problem
+    warn "CHECK_TEST in .slickrails/config.sh is empty — it checks nothing, no test runs in the hooks or in CI. Set it to the project's test command (slickrails doctor reports this as a problem)."
   fi
 fi
 

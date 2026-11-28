@@ -15,6 +15,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   it, delete it); `init` adds `*.slickrails-new` to `.gitignore`, so `git add -A` leaves them out
 - `slickrails init` on an existing install ends with an update summary (replaced / kept / open) instead of the
   first-install steps
+- Stack detection: a Python repo with a `package.json` only for tooling (no `test` or `typecheck` script) is checked
+  as Python (`pytest`), no longer as a Node project whose checks run nothing. `requirements-dev.txt` and other
+  `requirements*.txt` count as Python too
+- The `packageManager` field in `package.json` decides the package manager, ahead of the lockfiles; several lockfiles
+  without it are warned about, with the choice named. Without node, `package.json` scripts are read as text
+- The installer warns when it writes a `config.sh` with a typecheck but an empty `CHECK_TEST` (a yarn/bun project
+  without a `test` script), in the words `doctor` uses
+
+### Changed
+- `slickrails doctor` reports an empty `CHECK_TEST` (and a `config.sh` without any check) as a problem with exit 1,
+  no longer as a warning. This hits existing repos without a test command, with no change on their side: yarn/bun
+  projects with only a typecheck, Python without `tests/`, Swift with only an `.xcodeproj`, Ruby without
+  `spec/`/`test/`. Hooks and CI do not run `doctor`; `bootstrap.sh` does and stops after it in such a repo, until
+  `CHECK_TEST` is set
 
 ## [1.6.0] — 2026-11-12
 
