@@ -24,6 +24,9 @@ check in `config.sh` (pre-push keeps the full one), or a different deadline.
 | `SLICKRAILS_TESTS=fast sh tests/run.sh` (420 tests) | 156 s | 34–40 |
 | Stop gate with lint + fast part, green, exit 0 | 103 s | ~50 |
 
+The runs happened under different load, so the rows do not compare one to one; under the same load the fast part
+saves roughly the 129 s of the left-out sections (below). The figures show the order of magnitude, not a benchmark.
+
 Slowest sections of the full run: package check 41 s, installer honesty round 3 (no jq) 32 s, gate round 2
 23 s, local gate 20 s, seeded-bug benchmark 13 s — together 129 s, more than half the suite. Lint + full suite
 (248 s at a quiet moment) leaves about 20 s to the deadline, and the deadline counts from the start of the

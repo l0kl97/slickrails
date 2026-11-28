@@ -22,6 +22,8 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_
 # without jq, a symlinked settings file); on the GitHub runner native symlinks are allowed. No effect elsewhere.
 MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"; export MSYS
 
+# SLICKRAILS_TESTS_KIT_DIR is internal: a selection runs from a temp copy of this file, so it hands down the real kit
+# directory (dirname of the copy would point into $TMPDIR). Not meant to be set by hand.
 KIT_DIR="${SLICKRAILS_TESTS_KIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"; unset SLICKRAILS_TESTS_KIT_DIR
 
 # Test selection. SLICKRAILS_TESTS=all (default; pre-push and CI) runs everything. SLICKRAILS_TESTS=fast leaves out
@@ -154,6 +156,17 @@ SEL_OUT="$(SLICKRAILS_TESTS=fast SLICKRAILS_TESTS_PLAN=1 sh "$WORK/selection/tes
 [ "$SEL_RC" -eq 2 ] && case "$SEL_OUT" in *"local gate"*) true;; *) false;; esac \
   && ok "test selection: a slow-list entry that matches no section header stops the run and names the entry" \
   || fail "test selection: a slow-list entry that matches no section header stops the run and names the entry ($SEL_RC: $SEL_OUT)"
+# A red section inside the fast selection must make the whole run red: the selection's exit code is the gate's verdict.
+# The fake suite keeps the real preamble (selection logic), gives every slow entry an empty section, then one red one.
+mkdir -p "$WORK/selection-red/tests"
+{ sed -n '1,/^SLICKRAILS_REVIEW=off; export SLICKRAILS_REVIEW$/p' "$KIT_DIR/tests/run.sh"
+  printf '%s\n' "$SLOW_SECTIONS" | while IFS= read -r SLOW; do printf '# ---- %s ----\nexit 0\n' "$SLOW"; done
+  printf '# ---- a red section ----\necho "slickrails tests: 0 passed, 1 failed"; exit 1\n'
+} > "$WORK/selection-red/tests/run.sh"
+SLICKRAILS_TESTS=fast sh "$WORK/selection-red/tests/run.sh" >/dev/null 2>&1; SEL_RC=$?
+[ "$SEL_RC" -eq 1 ] \
+  && ok "test selection: a red test inside the fast selection makes the run red (exit 1)" \
+  || fail "test selection: a red test inside the fast selection makes the run red (exit 1, got $SEL_RC)"
 
 # ------------------------------------------------------------ installer -----
 
