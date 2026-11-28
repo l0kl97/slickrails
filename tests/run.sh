@@ -22,7 +22,39 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_
 # without jq, a symlinked settings file); on the GitHub runner native symlinks are allowed. No effect elsewhere.
 MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"; export MSYS
 
-KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+KIT_DIR="${SLICKRAILS_TESTS_KIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"; unset SLICKRAILS_TESTS_KIT_DIR
+
+# Test selection. SLICKRAILS_TESTS=all (default; pre-push and CI) runs everything. SLICKRAILS_TESTS=fast leaves out
+# the sections below: the kit repo's Stop gate has 270 s and lint + the full suite outgrew it (measured in
+# docs/features/session-stop-gate.md). Entries are parts of section header lines (`# ---- … ----`); an entry
+# that matches no header stops the run, so a renamed section cannot slip back in or out unnoticed.
+# SLICKRAILS_TESTS_PLAN=1 prints the headers of the sections a selection runs, without running them.
+SLOW_SECTIONS='seeded-bug benchmark
+package check:
+installer honesty, round 3
+local gate (
+gate, round 2 ('
+case "${SLICKRAILS_TESTS:-all}" in
+  all|fast) ;;
+  *) echo "tests/run.sh: unknown SLICKRAILS_TESTS=\"$SLICKRAILS_TESTS\" — use all (the default) or fast" >&2; exit 2 ;;
+esac
+if [ "${SLICKRAILS_TESTS:-all}" = fast ] || [ -n "${SLICKRAILS_TESTS_PLAN:-}" ]; then
+  SEL_FILE="$(mktemp "${TMPDIR:-/tmp}/slickrails-tests-sel.XXXXXX")" || exit 2
+  # one section = its header line up to the next header; the lines before the first header always stay
+  if ! awk -v sel="${SLICKRAILS_TESTS:-all}" -v slow="$(printf '%s' "$SLOW_SECTIONS" | tr '\n' '|')" '
+      BEGIN { n = split(slow, s, "|") }
+      /^# -{3,}/ { skip = 0; if (sel == "fast") for (i = 1; i <= n; i++) if (index($0, s[i])) { skip = 1; used[i] = 1 } }
+      !skip { print }
+      END { if (sel == "fast") for (i = 1; i <= n; i++) if (!used[i]) { print "tests/run.sh: slow-list entry \"" s[i] "\" matches no section header" > "/dev/stderr"; bad = 1 }
+            exit bad ? 2 : 0 }' "$0" > "$SEL_FILE"; then
+    rm -f "$SEL_FILE"; exit 2
+  fi
+  if [ -n "${SLICKRAILS_TESTS_PLAN:-}" ]; then grep -- '^# -\{3,\}' "$SEL_FILE"; rm -f "$SEL_FILE"; exit 0; fi
+  SLICKRAILS_TESTS=all SLICKRAILS_TESTS_KIT_DIR="$KIT_DIR" sh "$SEL_FILE"; SEL_RC=$?
+  rm -f "$SEL_FILE"
+  echo "slickrails tests: selection \"fast\" (left out: $(printf '%s' "$SLOW_SECTIONS" | tr '\n' ';')) — pre-push runs them all"
+  exit "$SEL_RC"
+fi
 # The installer turns the local AI review on when it finds claude or codex; the many test repos must not call the
 # real CLI on every test push. The tests of that detection set it themselves.
 SLICKRAILS_REVIEW=off; export SLICKRAILS_REVIEW
@@ -96,6 +128,32 @@ new_repo() { # new_repo <name> [files-setup-fn]
   git config user.email test@slickrails.local
   git config user.name  "slickrails Tests"
 }
+
+# ------------------------------------------------------- test selection ----
+# SLICKRAILS_TESTS=fast is the Stop gate's selection in the kit repo (the full suite outlives its deadline);
+# SLICKRAILS_TESTS_PLAN=1 prints the section headers a selection would run, without running them.
+PLAN_FAST="$(SLICKRAILS_TESTS=fast SLICKRAILS_TESTS_PLAN=1 sh "$KIT_DIR/tests/run.sh" 2>&1)"; PLAN_RC=$?
+PLAN_ALL="$(SLICKRAILS_TESTS=all SLICKRAILS_TESTS_PLAN=1 sh "$KIT_DIR/tests/run.sh" 2>&1)"
+[ "$PLAN_RC" -eq 0 ] && printf '%s\n' "$PLAN_FAST" | grep -q -- '- installer -' \
+  && printf '%s\n' "$PLAN_FAST" | grep -q -- '- test selection -' \
+  && ! printf '%s\n' "$PLAN_FAST" | grep -q -- 'local gate' \
+  && ! printf '%s\n' "$PLAN_FAST" | grep -q -- 'package check:' \
+  && printf '%s\n' "$PLAN_FAST" | grep -q -- 'session-check in isolation' \
+  && printf '%s\n' "$PLAN_ALL" | grep -q -- 'local gate' \
+  && [ "$(printf '%s\n' "$PLAN_FAST" | wc -l)" -lt "$(printf '%s\n' "$PLAN_ALL" | wc -l)" ] \
+  && ok "test selection: fast leaves out the slow sections, the default runs all of them" \
+  || fail "test selection: fast leaves out the slow sections, the default runs all of them ($PLAN_RC: $(printf '%s' "$PLAN_FAST" | head -3 | tr '\n' ' '))"
+SEL_OUT="$(SLICKRAILS_TESTS=quick sh "$KIT_DIR/tests/run.sh" 2>&1)"; SEL_RC=$?
+[ "$SEL_RC" -eq 2 ] && case "$SEL_OUT" in *"SLICKRAILS_TESTS"*"all"*"fast"*) true;; *) false;; esac \
+  && ok "test selection: an unknown selection stops with exit 2 and names the valid ones, it never runs a guess" \
+  || fail "test selection: an unknown selection stops with exit 2 and names the valid ones, it never runs a guess ($SEL_RC: $SEL_OUT)"
+# The slow list names sections by their header text: a renamed header must break loudly, not slip back in silently.
+mkdir -p "$WORK/selection/tests"
+sed 's/^# ---- local gate (/# ---- gate on this machine (/' "$KIT_DIR/tests/run.sh" > "$WORK/selection/tests/run.sh"
+SEL_OUT="$(SLICKRAILS_TESTS=fast SLICKRAILS_TESTS_PLAN=1 sh "$WORK/selection/tests/run.sh" 2>&1)"; SEL_RC=$?
+[ "$SEL_RC" -eq 2 ] && case "$SEL_OUT" in *"local gate"*) true;; *) false;; esac \
+  && ok "test selection: a slow-list entry that matches no section header stops the run and names the entry" \
+  || fail "test selection: a slow-list entry that matches no section header stops the run and names the entry ($SEL_RC: $SEL_OUT)"
 
 # ------------------------------------------------------------ installer -----
 
