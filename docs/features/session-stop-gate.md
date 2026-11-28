@@ -9,6 +9,56 @@ tree), the hook ran longer than its host timeout (Claude Code cancels it and ren
 itself crashed (every exit other than 2 is a non-blocking error). It also treated `stop_hook_active` as a free
 pass.
 
+## Kit repo: a lighter session check (SLI-209, 2026-11-28)
+**The ask:** while building SLI-175 (2026-11-27) the Stop gate ran into its own deadline in the kit repo:
+`sh scripts/lint.sh` + `sh tests/run.sh` took longer than 270 s, so sessions ended through the timeout path
+instead of a real green or red. Measure lint and suite on macOS and decide: a faster suite, a lighter session
+check in `config.sh` (pre-push keeps the full one), or a different deadline.
+
+**Measured** (macOS 27, Apple M2 Max, 2026-11-28, other agent sessions running on the same machine):
+
+| What | Time | Load average |
+|---|---|---|
+| `sh scripts/lint.sh` | 4 s | ~4 |
+| `sh tests/run.sh` (all, 564 tests) | 244 s | ~4 |
+| `SLICKRAILS_TESTS=fast sh tests/run.sh` (420 tests) | 156 s | 34–40 |
+| Stop gate with lint + fast part, green, exit 0 | 103 s | ~50 |
+
+The runs happened under different load, so the rows do not compare one to one; under the same load the fast part
+saves roughly the 129 s of the left-out sections (below). The figures show the order of magnitude, not a benchmark.
+
+Slowest sections of the full run: package check 41 s, installer honesty round 3 (no jq) 32 s, gate round 2
+23 s, local gate 20 s, seeded-bug benchmark 13 s — together 129 s, more than half the suite. Lint + full suite
+(248 s at a quiet moment) leaves about 20 s to the deadline, and the deadline counts from the start of the
+hook; one more ticket or a busy machine and it is over.
+
+**Decision:** a lighter session check for the kit repo, through the existing `CHECK_SESSION`:
+`tests/run.sh` takes `SLICKRAILS_TESTS=fast`, which leaves out exactly those five sections. pre-push and CI keep
+the full suite (`CHECK_TYPECHECK` + `CHECK_TEST`, `SLICKRAILS_TESTS` unset = `all`). Rejected: raising the
+deadline (Claude Code cancels the hook at its 300 s timeout, only 30 s more), running sections in parallel (a
+large rewrite of `tests/run.sh`, which almost every open PR changes).
+- The list of left-out sections (`SLOW_SECTIONS` at the top of `tests/run.sh`) names sections by part of their
+  header line. An entry that matches no header stops the run with exit 2 and names the entry, so a renamed
+  section cannot silently come back or drop out. An unknown `SLICKRAILS_TESTS` value also stops with exit 2.
+- `SLICKRAILS_TESTS_PLAN=1` prints the section headers a selection would run, without running them.
+- The line for `.slickrails/config.sh` (a protected kit file, the maintainer adds it):
+  `CHECK_SESSION="sh scripts/lint.sh && SLICKRAILS_TESTS=fast sh tests/run.sh"`
+
+**Where it lives:** `tests/run.sh` (selection block at the top, "test selection" section with its tests).
+
+**How to test it:**
+1. `sh tests/run.sh` — the three "test selection" tests (fast leaves out the slow sections; unknown value → exit 2;
+   stale list entry → exit 2).
+2. `SLICKRAILS_TESTS=fast SLICKRAILS_TESTS_PLAN=1 sh tests/run.sh` — the list of sections the gate runs.
+3. With the line above in `config.sh`: change a file and let a session stop — the gate runs lint + fast part and
+   ends green well before 270 s.
+
+**Limits:** what the fast part leaves out is checked at push time, not at session end: a session that breaks the
+package check or the local gate ends green and is stopped by pre-push. A new slow section has to be added to the
+list by hand; nothing measures the fast part's time against the deadline automatically. Side finding: an
+*exported* `CHECK_SESSION` reaches the suite's test repos and overrides their `config.sh` (a hand-run gate with
+`CHECK_SESSION=… sh .slickrails/session-check.sh` showed 7 false failures); set in `config.sh` it is not exported.
+
 ## Decisions
 - **Check when there is something to check:** uncommitted work **or** commits ahead of the upstream branch (else `origin/HEAD`, `origin/main`, `origin/master`). Without any base (no remote, detached HEAD) every commit counts as not pushed yet. A failing `git status` is a crash, not "nothing to check".
 - **Own deadline:** `SLICKRAILS_STOP_DEADLINE_MS` (env wins over `config.sh`; default 270000, below the 300 s hook timeout in `claude-settings.json`). Over it → the check process tree is killed (parent first, TERM then KILL) and the hook exits 2. A polling loop, not a watcher process: macOS has no `timeout`, and a watcher outlives the run (an orphaned `sleep 270` per stop in the first version) and breaks when the host starts the hook with SIGTERM ignored. A check over the deadline uses up the retries at once: block once, the next stop at that state passes (a slow suite does not get faster by asking again).

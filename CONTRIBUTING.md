@@ -13,7 +13,8 @@ the PR so a maintainer can.
 
 ## Before you open a PR
 
-1. Run the test suite: `sh tests/run.sh` — it must be green.
+1. Run the test suite: `sh tests/run.sh` — it must be green. (`SLICKRAILS_TESTS=fast` runs a quicker part;
+   meant for the session check, pre-push and CI always run everything.)
 2. This repo dogfoods itself: the slickrails hooks are active here. Your
    commit will be checked for secrets, and larger commits need a body
    explaining *why* and *what*.
