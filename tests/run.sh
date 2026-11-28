@@ -512,6 +512,10 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   if [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
     ok "bootstrap: the clone leaves the README media (assets/, demo/) out"
   else fail "bootstrap: the clone leaves the README media (assets/, demo/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
+  # nor the examples: they are for reading and trying, not for installing
+  if [ -f "$BOOT_HOME/install.sh" ] && [ -d "$KIT_DIR/examples" ] && [ ! -e "$BOOT_HOME/examples" ]; then
+    ok "bootstrap: the clone leaves the examples (examples/) out"
+  else fail "bootstrap: the clone leaves the examples (examples/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
   # a half install (a .git without files, the checkout was interrupted) is completed on the next run
   # (one commit behind upstream: the pull must not take the missing files for deletions)
   rm -rf "$WORK/boot-up" "$WORK/boot-half"; git clone -q "$KIT_DIR" "$WORK/boot-up" 2>/dev/null
