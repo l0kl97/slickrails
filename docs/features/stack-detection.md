@@ -50,9 +50,8 @@ install, and was green from then on.
    exit 1.
 
 ## Limits & open items
-- `ci-node.yml` still picks the package manager by lockfile, pnpm first, and ignores `packageManager`. With several
-  lockfiles local checks and CI can disagree; the installer's warning says to set the field, removing the stale
-  lockfile settles both.
+- Since SLI-211, `ci-node.yml` picks the package manager by the same rule (`packageManager` first, then the
+  lockfiles in this order), so local checks and CI agree; see `docs/features/ci-node-package-manager.md`.
 - The `packageManager` value is read with `sed` from the line it is on; a field split across lines is not found
   (then the lockfiles decide).
 - A Python repo without `tests/` still gets an empty `CHECK_TEST` at install (pytest would fail with "no tests

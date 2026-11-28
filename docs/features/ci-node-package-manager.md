@@ -35,9 +35,8 @@ lockfiles, while `templates/workflows/ci-node.yml` went by lockfile only, pnpm f
 ## How to test it
 1. `sh tests/run.sh` — the `ci-node.yml: packageManager first …` and `ci-node.yml: picks the same package manager
    as init …` lines.
-2. The comparison with init is skipped (`SKIP  ci-node.yml vs init …`) while `install.sh` does not read
-   `packageManager` (before SLI-190 / PR #16 is merged). To run it against another installer:
-   `SLICKRAILS_TEST_INIT_SH=/path/to/install.sh sh tests/run.sh`.
+2. The comparison with init always runs since SLI-190 (PR #16) is on main; a difference is a failed test, never a
+   skip.
 3. By hand in a repo with the template: `pnpm-lock.yaml`, `bun.lockb` and `"packageManager": "bun@1.2.0"` → the
    step log says `Package manager: bun (packageManager in package.json)`.
 

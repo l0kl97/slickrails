@@ -2500,9 +2500,8 @@ IFS="$OLDIFS"
 [ -z "$PM_BAD" ] && ok "ci-node.yml: packageManager first (npm/pnpm/yarn/bun), else bun > yarn > pnpm lockfile, else npm" \
   || fail "ci-node.yml: packageManager first (npm/pnpm/yarn/bun), else bun > yarn > pnpm lockfile, else npm (wrong:$PM_BAD)"
 # ...and init picks the same on the same fixtures (one rule, two copies: the CI has only the repo, not install.sh).
-# init reads packageManager only since SLI-190; an installer without it is skipped, not failed.
-INIT_SH="${SLICKRAILS_TEST_INIT_SH:-$KIT_DIR/install.sh}"
-if grep -q '"packageManager"' "$INIT_SH"; then
+# init reads packageManager since SLI-190 (#16, merged), so the comparison always runs; no skip.
+INIT_SH="$KIT_DIR/install.sh"
   PAR_BAD=""
   OLDIFS="$IFS"; IFS='
 '
@@ -2519,9 +2518,6 @@ if grep -q '"packageManager"' "$INIT_SH"; then
   IFS="$OLDIFS"
   [ -z "$PAR_BAD" ] && ok "ci-node.yml: picks the same package manager as init on every fixture" \
     || fail "ci-node.yml: picks the same package manager as init on every fixture (differ:$PAR_BAD)"
-else
-  printf 'SKIP  ci-node.yml vs init: this install.sh does not read packageManager yet (comes with SLI-190, PR #16)\n'
-fi
 # a package.json that cannot be read (missing) must not break the step: lockfiles decide
 rm -rf "$WORK/pm-no-pkg"; mkdir -p "$WORK/pm-no-pkg"; cd "$WORK/pm-no-pkg"; : > yarn.lock
 [ "$(ci_pm)" = "yarn" ] && ok "ci-node.yml: without package.json the step still picks by lockfile" \
