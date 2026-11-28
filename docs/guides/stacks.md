@@ -26,11 +26,11 @@ and CI follows. Lint, formatting and build steps stay in the template.
 when its lockfile is there. Not covered: yarn, bun, JVM.
 
 **Node package managers:** the `packageManager` field in `package.json`
-(`"pnpm@10.32.1"`, what Corepack reads) decides. Without it the lockfile
-does — `bun.lockb`/`bun.lock` before `yarn.lock` before `pnpm-lock.yaml`,
-else npm — and with several lockfiles the installer warns and names its
-choice. The CI template still picks by lockfile (`pnpm-lock.yaml` first);
-with several lockfiles set `packageManager` and remove the stale lockfile.
+(`"pnpm@10.32.1"`, what Corepack reads) decides when it names npm, pnpm, yarn or bun;
+otherwise the lockfile does — `bun.lockb`/`bun.lock` before `yarn.lock` before
+`pnpm-lock.yaml`, else npm — and with several lockfiles the installer warns and
+names its choice. The CI template (`ci-node.yml`) applies the same rule and names
+its choice in the step log.
 
 **Monorepos:** the hooks run one command from the repo root — point
 `CHECK_TEST` at your workspace runner (`pnpm -r test`,

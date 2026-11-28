@@ -2454,6 +2454,75 @@ grep -q 'uses: actions/cache@' "$NODE_CI" && grep -q "hashFiles('package-lock.js
   && grep -q '[~]/.npm' "$NODE_CI" && grep -q 'pnpm/store' "$NODE_CI" && grep -q 'bun/install/cache' "$NODE_CI" \
   && ok "ci-node.yml: caches npm/pnpm/yarn/bun downloads keyed by the lockfile" || fail "ci-node.yml: caches npm/pnpm/yarn/bun downloads keyed by the lockfile"
 
+# ---- Node CI template: the package manager is chosen like init chooses it (SLI-211) ------------------------------
+# (the template went by lockfile only, pnpm first; init reads packageManager first, then bun before yarn before pnpm.
+# With several lockfiles the local hooks and CI ran different package managers.)
+# The "Detect package manager" step, taken out of the template and run as the workflow runs it: pm=<name> in $GITHUB_OUTPUT.
+awk '/name: Detect package manager/{f=1; next} f && /^        run: \|/{r=1; next} r && /^      - /{exit} r {sub(/^          /, ""); print}' \
+  "$NODE_CI" > "$WORK/ci-pm-step.sh"
+ci_pm() { # ci_pm -> the package manager the template's step picks in the current directory
+  : > "$WORK/ci-pm-out"; GITHUB_OUTPUT="$WORK/ci-pm-out" bash -e "$WORK/ci-pm-step.sh" >/dev/null 2>&1 || { echo "step-failed"; return 0; }
+  sed -n 's/^pm=//p' "$WORK/ci-pm-out" | tail -1
+}
+# <fixture name>|<package.json>|<lockfiles>|<expected pm> — expected values from the rule in docs/features/ci-node-package-manager.md
+PM_FIXTURES='repro-bun-field|{"name":"t","packageManager":"bun@1.2.0"}|pnpm-lock.yaml bun.lockb|bun
+pnpm-field-over-bun|{"name":"t","packageManager":"pnpm@10.32.1"}|pnpm-lock.yaml bun.lockb|pnpm
+npm-field-over-bun|{"name":"t","packageManager":"npm@10.9.0"}|bun.lockb|npm
+yarn-field-no-lock|{"name":"t","packageManager":"yarn@4.5.0+sha512.abc"}||yarn
+field-without-version|{"name":"t","packageManager":"pnpm"}|yarn.lock|pnpm
+field-spaced|{ "name": "t", "packageManager" : "bun@1" }|package-lock.json|bun
+unknown-field-lockfile-decides|{"name":"t","packageManager":"deno@2.0.0"}|pnpm-lock.yaml|pnpm
+unknown-field-no-lock|{"name":"t","packageManager":"deno@2"}||npm
+empty-field|{"name":"t","packageManager":""}|yarn.lock|yarn
+uppercase-field-is-unknown|{"name":"t","packageManager":"PNPM@10"}|bun.lock|bun
+no-field-bun-before-yarn-pnpm|{"name":"t"}|pnpm-lock.yaml yarn.lock bun.lockb|bun
+no-field-yarn-before-pnpm|{"name":"t"}|pnpm-lock.yaml yarn.lock|yarn
+no-field-bun-lock-text|{"name":"t"}|bun.lock|bun
+no-field-npm-lock|{"name":"t"}|package-lock.json|npm
+no-field-no-lock|{"name":"t"}||npm
+field-in-a-script-only|{"name":"t","scripts":{"x":"echo packageManager"}}|pnpm-lock.yaml|pnpm'
+pm_fixture() { # pm_fixture <name> <package.json> <lockfiles>
+  rm -rf "$WORK/pm-$1"; mkdir -p "$WORK/pm-$1"; cd "$WORK/pm-$1"
+  printf '%s\n' "$2" > package.json
+  for L in $3; do : > "$L"; done
+}
+PM_BAD=""
+OLDIFS="$IFS"; IFS='
+'
+for FX in $PM_FIXTURES; do
+  IFS="$OLDIFS"
+  FX_NAME="${FX%%|*}"; FX_REST="${FX#*|}"; FX_PKG="${FX_REST%%|*}"; FX_REST="${FX_REST#*|}"; FX_LOCKS="${FX_REST%%|*}"; FX_WANT="${FX_REST#*|}"
+  pm_fixture "$FX_NAME" "$FX_PKG" "$FX_LOCKS"
+  FX_GOT="$(ci_pm)"
+  [ "$FX_GOT" = "$FX_WANT" ] || PM_BAD="$PM_BAD $FX_NAME:$FX_GOT(want $FX_WANT)"
+done
+IFS="$OLDIFS"
+[ -z "$PM_BAD" ] && ok "ci-node.yml: packageManager first (npm/pnpm/yarn/bun), else bun > yarn > pnpm lockfile, else npm" \
+  || fail "ci-node.yml: packageManager first (npm/pnpm/yarn/bun), else bun > yarn > pnpm lockfile, else npm (wrong:$PM_BAD)"
+# ...and init picks the same on the same fixtures (one rule, two copies: the CI has only the repo, not install.sh).
+# init reads packageManager since SLI-190 (#16, merged), so the comparison always runs; no skip.
+INIT_SH="$KIT_DIR/install.sh"
+  PAR_BAD=""
+  OLDIFS="$IFS"; IFS='
+'
+  for FX in $PM_FIXTURES; do
+    IFS="$OLDIFS"
+    FX_NAME="${FX%%|*}"; FX_REST="${FX#*|}"; FX_PKG="${FX_REST%%|*}"; FX_REST="${FX_REST#*|}"; FX_LOCKS="${FX_REST%%|*}"
+    pm_fixture "$FX_NAME" "$FX_PKG" "$FX_LOCKS"
+    FX_CI="$(ci_pm)"
+    git init -q . && git config user.email test@slickrails.local && git config user.name "slickrails Tests"
+    # init says its choice as "Package manager: <pm>" or, with several lockfiles, "… — using <pm>."
+    FX_INIT="$(sh "$INIT_SH" 2>&1 | sed -n 's/.*Package manager: \([a-z]*\).*/\1/p; s/.* using \([a-z]*\)\. .*/\1/p' | head -1)"
+    [ -n "$FX_INIT" ] && [ "$FX_INIT" = "$FX_CI" ] || PAR_BAD="$PAR_BAD $FX_NAME:ci=$FX_CI,init=${FX_INIT:-unread}"
+  done
+  IFS="$OLDIFS"
+  [ -z "$PAR_BAD" ] && ok "ci-node.yml: picks the same package manager as init on every fixture" \
+    || fail "ci-node.yml: picks the same package manager as init on every fixture (differ:$PAR_BAD)"
+# a package.json that cannot be read (missing) must not break the step: lockfiles decide
+rm -rf "$WORK/pm-no-pkg"; mkdir -p "$WORK/pm-no-pkg"; cd "$WORK/pm-no-pkg"; : > yarn.lock
+[ "$(ci_pm)" = "yarn" ] && ok "ci-node.yml: without package.json the step still picks by lockfile" \
+  || fail "ci-node.yml: without package.json the step still picks by lockfile (got $(ci_pm))"
+
 # ---- AI review in CI: a Claude subscription token works as well as an API key ------------------------------------
 # (claude-code-action accepts claude_code_oauth_token from `claude setup-token`; the security-review action has no such input)
 F=templates/workflows/claude-review.yml   # the template only: the kit repo itself reviews locally (no workflow copy)
