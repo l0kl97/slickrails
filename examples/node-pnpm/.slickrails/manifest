@@ -1,0 +1,16 @@
+# slickrails 1.6.0 — what the installer placed: hash, file, template. Commit it; do not edit.
+d152f61ce318e2f672bf80598c19dc6cb58ae3f9 .slickrails/SLICKRAILS.md SLICKRAILS.md
+0288bfe12e73ab2ca575f22c8fabf96b38535466 .githooks/pre-commit templates/hooks/pre-commit
+648f5e415e8a3f6f262add922f62520dca16009f .githooks/pre-push templates/hooks/pre-push
+259b3931ee611c5690eaf2b3cc628b681ed723c0 .githooks/commit-msg templates/hooks/commit-msg
+f13d366a6aad64e5bd36e7da5e10a1425b4f49f6 .githooks/post-merge templates/hooks/post-merge
+d6180d6faa17aa3b4605db6bd35a408a039b116d .github/workflows/ci.yml templates/workflows/ci-node.yml
+e10e2e09607a7ac070ee49a5736acf23ca1a0eea .github/workflows/security.yml templates/workflows/security.yml
+f8f11455cd7f5a4deb1bb76e848edb4980a03b03 .github/workflows/pr-size.yml templates/workflows/pr-size.yml
+8f755172c5993ad94ee56b870c0b82ad85f887b3 .github/dependabot.yml templates/dependabot.yml
+4bc9702cbfe58bbe34750ac97c2a23b527291424 .github/PULL_REQUEST_TEMPLATE.md templates/pr-template.md
+23213e8f7cdf4288cc46f323b8c9a5e816e58353 .slickrails/session-check.sh templates/session-check.sh
+6b6dff2b8d5e18f5ca47ec4e30a08ed6924fd9d5 .slickrails/ai-review.sh templates/ai-review.sh
+985fe241abb42c870af6e42144f80048f850b70e .slickrails/bash-guard.sh templates/bash-guard.sh
+fe4f4efeafa0f7a5aade27546d0fb0eb7a5814e6 .slickrails/dep-check.sh templates/dep-check.sh
+4b19d62fa95606bf6a9831c4d6fe38ca33e1f419 .slickrails/setup-check.sh templates/setup-check.sh

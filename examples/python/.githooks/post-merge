@@ -1,0 +1,25 @@
+#!/bin/sh
+# slickrails: post-merge — close the loop after every merge. Advisory only,
+# never blocks: if a merge brought code changes without documentation
+# follow-through, say so loudly and point at the tools.
+
+set -u
+
+say() { printf '%s\n' "slickrails[post-merge]: $*" >&2; }
+
+CHANGED="$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null || true)"
+[ -z "$CHANGED" ] && exit 0
+
+CODE="$(printf '%s\n' "$CHANGED" | grep -vcE '^(docs/|CHANGELOG|README|LICENSE|.*\.md$)' || true)"
+DOSSIER="$(printf '%s\n' "$CHANGED" | grep -cE '^docs/features/' || true)"
+CHLOG="$(printf '%s\n' "$CHANGED" | grep -cE '^CHANGELOG' || true)"
+
+if [ "${CODE:-0}" -gt 0 ] && [ "${DOSSIER:-0}" -eq 0 ] && [ -d docs/features ]; then
+  say "this merge changed code but touched no feature dossier (rule 11)."
+  say "close the loop: 'slickrails dossier' drafts docs/features/<slug>.md from the diff."
+fi
+if [ "${CODE:-0}" -gt 0 ] && [ "${CHLOG:-0}" -eq 0 ] && [ -f CHANGELOG.md ]; then
+  say "reminder: CHANGELOG.md was not updated by this merge."
+fi
+
+exit 0

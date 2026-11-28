@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+
+# slickrails
+.env
+.env.*
+!.env.example

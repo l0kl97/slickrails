@@ -1,0 +1,13 @@
+{
+  "name": "slickrails-example-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny project set up with slickrails: one function, one test, one feature dossier.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

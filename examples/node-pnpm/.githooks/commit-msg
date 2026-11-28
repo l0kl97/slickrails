@@ -1,0 +1,37 @@
+#!/bin/sh
+# slickrails: commit-msg — larger commits need a body (why + what).
+# Catches the "2-line commit, 200-line diff, nobody remembers why" case.
+# Escape hatch: git commit --no-verify (then the reason belongs in the text all the more)
+
+set -u
+
+MSG_FILE="$1"
+FIRST_LINE="$(head -1 "$MSG_FILE")"
+
+case "$FIRST_LINE" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0;;
+esac
+
+# Count non-comment, non-empty lines of the message
+LINES="$(grep -vE '^#' "$MSG_FILE" | grep -cvE '^[[:space:]]*$' || true)"
+# Changed lines in the commit
+CHANGED="$(git diff --cached --numstat | awk '{s+=$1+$2} END {print s+0}')"
+THRESHOLD="${SLICKRAILS_COMMIT_BODY_MIN:-30}"
+
+if [ "${CHANGED:-0}" -ge "$THRESHOLD" ] && [ "${LINES:-0}" -lt 3 ]; then
+  {
+    echo "slickrails[commit-msg]: Blocked — $CHANGED changed lines, but only $LINES line(s) of commit text."
+    echo ""
+    echo "A commit this size needs a body someone will understand in 2 months:"
+    echo ""
+    echo "  <short title: what>"
+    echo ""
+    echo "  Why:  <the ask/problem in plain language>"
+    echo "  What: <approach + key decisions>"
+    echo ""
+    echo "(Emergency: --no-verify — then the reason still goes in the text.)"
+  } >&2
+  exit 1
+fi
+
+exit 0
