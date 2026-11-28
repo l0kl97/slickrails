@@ -5,3 +5,5 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# slickrails: kit updates waiting next to an edited file (slickrails doctor lists them)
+*.slickrails-new
