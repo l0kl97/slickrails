@@ -23,6 +23,9 @@ the PR so a maintainer can.
    releases and checks `templates/release-hashes`. After tagging a release,
    regenerate that file (`sh scripts/release-hashes.sh > templates/release-hashes`)
    so upgrades from that release replace its unedited files.
+6. Changed a template or `install.sh`? Rebuild the examples with
+   `sh scripts/build-examples.sh` and commit the result; the test suite fails
+   until the examples match the kit.
 
 ## What makes a good contribution
 

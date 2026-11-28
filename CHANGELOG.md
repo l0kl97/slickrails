@@ -15,6 +15,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](ht
   it, delete it); `init` adds `*.slickrails-new` to `.gitignore`, so `git add -A` leaves them out
 - `slickrails init` on an existing install ends with an update summary (replaced / kept / open) instead of the
   first-install steps
+### Added
+- `examples/node-pnpm` and `examples/python`: two mini repos set up with the current kit, each with a filled-in
+  feature dossier; `examples/README.md` walks through a blocked secret commit and a blocked red push. Their kit files
+  come from `scripts/build-examples.sh`, and a test fails when they fall behind the kit. `bootstrap.sh` leaves them out
 
 ## [1.6.0] — 2026-11-12
 

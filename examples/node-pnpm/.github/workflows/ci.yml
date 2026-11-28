@@ -1,0 +1,89 @@
+# slickrails: CI for Node/TypeScript projects
+# Detects the package manager by lockfile (npm/pnpm/yarn/bun) and runs lint and build if package.json defines
+# them, and between the two the checks from .slickrails/config.sh (typecheck, tests).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: slickrails setup
+        # fails when the guardrails (git hooks, checks in config.sh, agent session hooks) are missing or empty;
+        # repository variable SLICKRAILS_SETUP_CHECK=warn reports only, =off skips
+        env:
+          SLICKRAILS_SETUP_CHECK: ${{ vars.SLICKRAILS_SETUP_CHECK }}
+        run: sh .slickrails/setup-check.sh
+
+      - name: Detect package manager
+        id: pm
+        run: |
+          if [ -f pnpm-lock.yaml ]; then echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then echo "pm=yarn" >> "$GITHUB_OUTPUT"
+          elif [ -f bun.lockb ] || [ -f bun.lock ]; then echo "pm=bun" >> "$GITHUB_OUTPUT"
+          else echo "pm=npm" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.pm.outputs.pm == 'bun'
+
+      # The package manager's downloads, keyed by the lockfile. Runs on main fill the cache, PRs read it
+      # (GitHub lets a PR restore its base branch's cache). node_modules itself is not cached: npm ci deletes it.
+      - name: Cache dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.npm
+            ~/.local/share/pnpm/store
+            ~/.cache/yarn
+            .yarn/cache
+            ~/.bun/install/cache
+          key: deps-${{ runner.os }}-${{ steps.pm.outputs.pm }}-${{ hashFiles('package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb') }}
+          restore-keys: deps-${{ runner.os }}-${{ steps.pm.outputs.pm }}-
+
+      - name: Install
+        env:
+          PM: ${{ steps.pm.outputs.pm }}
+        run: |
+          case "$PM" in
+            npm)  npm ci;;
+            pnpm) corepack enable && pnpm install --frozen-lockfile;;
+            yarn) corepack enable && yarn install --frozen-lockfile || yarn install --immutable;;
+            bun)  bun install --frozen-lockfile;;
+          esac
+
+      - name: Lint
+        env:
+          PM: ${{ steps.pm.outputs.pm }}
+        run: |
+          if node -e "p=require('./package.json');process.exit(p.scripts&&p.scripts.lint?0:1)"; then "$PM" run lint; else echo "skip: no 'lint' script"; fi
+
+      - name: Checks (.slickrails/config.sh — the same commands the local hooks run)
+        run: |
+          . ./.slickrails/config.sh
+          if [ -n "${CHECK_TYPECHECK:-}" ]; then sh -c "$CHECK_TYPECHECK"; else echo "skip: CHECK_TYPECHECK is empty"; fi
+          if [ -z "${CHECK_TEST:-}" ]; then
+            echo "CHECK_TEST in .slickrails/config.sh is empty: no tests run, here or in the local hooks. Set it (rule 3)."
+            exit 1
+          fi
+          sh -c "$CHECK_TEST"
+
+      - name: Build
+        env:
+          PM: ${{ steps.pm.outputs.pm }}
+        run: |
+          if node -e "p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)"; then "$PM" run build; else echo "skip: no 'build' script"; fi

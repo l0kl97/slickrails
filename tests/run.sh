@@ -512,6 +512,10 @@ if git -C "$KIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   if [ -f "$BOOT_HOME/install.sh" ] && [ ! -e "$BOOT_HOME/assets" ] && [ ! -e "$BOOT_HOME/demo" ]; then
     ok "bootstrap: the clone leaves the README media (assets/, demo/) out"
   else fail "bootstrap: the clone leaves the README media (assets/, demo/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
+  # nor the examples: they are for reading and trying, not for installing
+  if [ -f "$BOOT_HOME/install.sh" ] && [ -d "$KIT_DIR/examples" ] && [ ! -e "$BOOT_HOME/examples" ]; then
+    ok "bootstrap: the clone leaves the examples (examples/) out"
+  else fail "bootstrap: the clone leaves the examples (examples/) out ($(ls "$BOOT_HOME" | tr '\n' ' '))"; fi
   # a half install (a .git without files, the checkout was interrupted) is completed on the next run
   # (one commit behind upstream: the pull must not take the missing files for deletions)
   rm -rf "$WORK/boot-up" "$WORK/boot-half"; git clone -q "$KIT_DIR" "$WORK/boot-up" 2>/dev/null
@@ -2387,6 +2391,80 @@ LEAK_NAME="$(git config --local user.name 2>/dev/null || true)"; LEAK_BARE="$(gi
 if [ "$LEAK_NAME" != "leak-probe" ] && [ "$LEAK_BARE" = "false" ] && [ -d "$WORK/inner/.git" ]; then
   ok "pre-push: checks run without git's hook environment (a check's own git repo stays its own)"
 else fail "pre-push: checks run without git's hook environment (user.name=$LEAK_NAME, core.bare=$LEAK_BARE)"; fi
+
+# ---- examples/: what scripts/build-examples.sh makes from the current kit, so they cannot fall behind silently ------
+# examples_match <committed-dir> <built-dir>: the same files with the same content; the date in STATUS.md is the day
+# of the build and is compared as DATE. Prints the first differences.
+examples_match() {
+  diff -r -x STATUS.md -x node_modules -x __pycache__ -x .pytest_cache "$1" "$2" > "$WORK/ex-diff" 2>&1 || { head -3 "$WORK/ex-diff"; return 1; }
+  for EXS in "$1"/*/.slickrails/STATUS.md; do
+    EXB="$2/${EXS#"$1"/}"
+    [ -f "$EXB" ] && [ "$(sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}/DATE/g' "$EXS")" = "$(sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}/DATE/g' "$EXB")" ] \
+      || { echo "STATUS.md differs: ${EXS#"$1"/}"; return 1; }
+  done
+}
+EX_BUILT="$WORK/examples-built"
+if sh "$KIT_DIR/scripts/build-examples.sh" "$EX_BUILT" > "$WORK/ex-build.log" 2>&1; then
+  EX_SRC="$WORK/examples-committed"; rm -rf "$EX_SRC"; mkdir -p "$EX_SRC"
+  for EXD in "$KIT_DIR"/examples/*/; do cp -R "$EXD" "$EX_SRC/$(basename "$EXD")"; done
+  EX_WHY="$(examples_match "$EX_SRC" "$EX_BUILT")" && [ -d "$EX_SRC/node-pnpm" ] && [ -d "$EX_SRC/python" ] \
+    && ok "examples: node-pnpm and python are what build-examples.sh makes from this kit (rebuild: sh scripts/build-examples.sh)" \
+    || fail "examples: node-pnpm and python are what build-examples.sh makes from this kit — rebuild: sh scripts/build-examples.sh ($(printf '%s' "$EX_WHY" | tr '\n' ' '))"
+  # the check sees a kit file edited inside an example, and one the build no longer makes
+  printf '# edited\n' >> "$EX_SRC/python/.githooks/pre-push"
+  examples_match "$EX_SRC" "$EX_BUILT" >/dev/null && fail "examples: an edited kit file in an example is caught" || ok "examples: an edited kit file in an example is caught"
+  rm -rf "$EX_SRC"; cp -R "$EX_BUILT" "$EX_SRC"; : > "$EX_SRC/node-pnpm/.slickrails/old-kit-file.sh"
+  examples_match "$EX_SRC" "$EX_BUILT" >/dev/null && fail "examples: a file the kit no longer installs is caught" || ok "examples: a file the kit no longer installs is caught"
+  # the manifest names the kit version the example was built with
+  EX_VER_BAD=""
+  for EXM in "$KIT_DIR"/examples/*/.slickrails/manifest; do
+    head -1 "$EXM" | grep -qF "# slickrails $(cat "$KIT_DIR/VERSION") " || EX_VER_BAD="$EX_VER_BAD $EXM"
+  done
+  [ -z "$EX_VER_BAD" ] && ok "examples: the manifests name the current kit version" || fail "examples: the manifests name the current kit version (${EX_VER_BAD#"$KIT_DIR"/})"
+else
+  fail "examples: build-examples.sh runs ($(tail -2 "$WORK/ex-build.log" | tr '\n' ' '))"
+fi
+
+# each example shows a filled-in feature dossier: every section of the template, no placeholder left, a history entry
+DOS_BAD=""
+for EXD in node-pnpm python; do
+  DOS=""; for F in "$KIT_DIR/examples/$EXD/docs/features/"*.md; do case "$F" in */README.md|*/_TEMPLATE.md) ;; *) [ -f "$F" ] && DOS="$F";; esac; done
+  [ -n "$DOS" ] || { DOS_BAD="$DOS_BAD $EXD:none"; continue; }
+  for H in "## The ask (plain language)" "## Decisions" "## Where it lives" "## How to test it" "## Limits & open items" "## History"; do
+    grep -qxF "$H" "$DOS" || DOS_BAD="$DOS_BAD $EXD:'$H'"
+  done
+  grep -qE 'YYYY-MM-DD|<Feature name>|<name>|<!--|^- *$|^1\. *$' "$DOS" && DOS_BAD="$DOS_BAD $EXD:placeholder"
+  awk '/^## History/ { h = 1; next } /^## / { h = 0 } h && /^- [0-9]{4}-[0-9]{2}-[0-9]{2}: / { n++ } END { exit !(n >= 2) }' "$DOS" \
+    || DOS_BAD="$DOS_BAD $EXD:history"
+done
+[ -z "$DOS_BAD" ] && ok "examples: each has a filled-in feature dossier (all sections, no placeholders, a history entry after creation)" \
+  || fail "examples: each has a filled-in feature dossier (all sections, no placeholders, a history entry after creation):$DOS_BAD"
+
+# examples/README.md, played through on a copy: git init, the hooks on, a secret commit is blocked, a red push is blocked
+grep -q 'git config core.hooksPath .githooks' "$KIT_DIR/examples/README.md" 2>/dev/null && grep -q 'AKIA%s' "$KIT_DIR/examples/README.md" \
+  && grep -q 'git push' "$KIT_DIR/examples/README.md" \
+  && ok "examples/README.md: walks through copy, git init, a secret commit and a red push" \
+  || fail "examples/README.md: walks through copy, git init, a secret commit and a red push"
+if python3 -m pytest --version >/dev/null 2>&1; then
+  EXP="$WORK/try-example"; rm -rf "$EXP" "$WORK/try-remote.git"; cp -R "$KIT_DIR/examples/python" "$EXP"; cd "$EXP"
+  git init -q; git config user.email test@slickrails.local; git config user.name "slickrails Tests"; git config core.hooksPath .githooks
+  git add -A && git commit -q -m "Start from the slickrails example" -m "Why: try the guardrails on a small project" -m "What: the example as it ships" >/dev/null 2>&1 \
+    && ok "examples: the first commit of a fresh copy goes through" || fail "examples: the first commit of a fresh copy goes through"
+  printf 'AWS_KEY = "AKIA%s"\n' ABCDEFGHIJKLMNOP > src/settings.py; git add src/settings.py
+  git commit -q -m "Add settings" >/dev/null 2>&1 && fail "examples: a commit with a secret is blocked" || ok "examples: a commit with a secret is blocked"
+  git rm -q --cached src/settings.py; rm -f src/settings.py
+  sed 's/    return total$/    return total + 1/' src/duration/__init__.py > "$WORK/dur.py" && cat "$WORK/dur.py" > src/duration/__init__.py
+  git commit -q -am "Count one minute more" >/dev/null 2>&1; git init -q --bare "$WORK/try-remote.git"
+  EXP_OUT="$(git push "$WORK/try-remote.git" HEAD:main 2>&1)"; EXP_RC=$?
+  [ "$EXP_RC" -ne 0 ] && case "$EXP_OUT" in *"Tests is red"*) true;; *) false;; esac \
+    && ok "examples: a push with a red test is blocked" || fail "examples: a push with a red test is blocked (exit $EXP_RC; $(printf '%s' "$EXP_OUT" | tail -2 | tr '\n' ' '))"
+  sed 's/    return total + 1$/    return total/' src/duration/__init__.py > "$WORK/dur.py" && cat "$WORK/dur.py" > src/duration/__init__.py
+  git commit -q -am "Count minutes exactly again" >/dev/null 2>&1
+  git push -q "$WORK/try-remote.git" HEAD:main >/dev/null 2>&1 && ok "examples: after the fix the push goes out" || fail "examples: after the fix the push goes out"
+  cd "$KIT_DIR"
+else
+  printf 'SKIP  examples: README walk-through (pytest is not installed)\n'
+fi
 
 # ---- public hygiene: nothing from the maker's machine or work process in the tracked files ----------------------
 # (a dossier once pointed at an untracked planning file; paths and mailbox names of one machine mean nothing to anyone else)
