@@ -26,8 +26,9 @@ else
     rmdir "$DEST" 2>/dev/null || { echo "slickrails: $DEST exists and is not a slickrails clone — move it away or set SLICKRAILS_HOME" >&2; exit 1; }
   fi
   # The README's media (assets/, demo/: GIFs and the trailer, about 6 MB) and the examples (examples/, for reading and
-  # trying) are not part of the tool. A sparse checkout leaves them out. The patterns go into the sparse file, not on the command line: Git Bash rewrites arguments that
-  # start with / into Windows paths, and the file works with any git since 1.7.
+  # trying) are not part of the tool. A sparse checkout leaves them out. The patterns go into the sparse file, not on
+  # the command line: Git Bash rewrites arguments that start with / into Windows paths, and the file works with any
+  # git since 1.7.
   # The files are fetched only at checkout; the clone is built next to $DEST and moved into place when complete, so a
   # dropped connection leaves no half install that every later run would take for a finished one.
   PART="$DEST.partial"
