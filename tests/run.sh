@@ -2428,7 +2428,7 @@ fi
 # each example shows a filled-in feature dossier: every section of the template, no placeholder left, a history entry
 DOS_BAD=""
 for EXD in node-pnpm python; do
-  DOS="$(ls "$KIT_DIR/examples/$EXD/docs/features/"*.md 2>/dev/null | grep -vE '/(README|_TEMPLATE)\.md$' | head -1)"
+  DOS=""; for F in "$KIT_DIR/examples/$EXD/docs/features/"*.md; do case "$F" in */README.md|*/_TEMPLATE.md) ;; *) [ -f "$F" ] && DOS="$F";; esac; done
   [ -n "$DOS" ] || { DOS_BAD="$DOS_BAD $EXD:none"; continue; }
   for H in "## The ask (plain language)" "## Decisions" "## Where it lives" "## How to test it" "## Limits & open items" "## History"; do
     grep -qxF "$H" "$DOS" || DOS_BAD="$DOS_BAD $EXD:'$H'"
